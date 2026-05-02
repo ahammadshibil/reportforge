@@ -21,6 +21,8 @@ import { getBrand } from "./brand";
 import { authConfigured, currentUser, login, requireAuth } from "./auth";
 import { registerConnectorRoutes } from "./connectors/routes";
 import { llmStatus } from "./llm";
+import { runSchedule, nextRunFor } from "./runner";
+import { emailConfigured } from "./email";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -236,7 +238,29 @@ export async function registerRoutes(
     res.json({ ok: true });
   });
 
-  // ----- Connectors (Phase 2) -----
+  // Manual fire-now for a schedule. Useful for testing delivery without
+  // waiting for the cron tick.
+  app.post("/api/schedules/:id/run", guard, async (req, res) => {
+    const s = storage.getSchedule(Number(req.params.id));
+    if (!s) return res.status(404).json({ error: "not_found" });
+    try {
+      const result = await runSchedule(s);
+      const now = Date.now();
+      storage.updateSchedule(s.id, {
+        lastRunAt: now,
+        nextRunAt: nextRunFor(s.cadence, now),
+      });
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "run_failed" });
+    }
+  });
+
+  app.get("/api/email/status", guard, (_req, res) => {
+    res.json({ configured: emailConfigured() });
+  });
+
+  // ----- Connectors -----
   registerConnectorRoutes(app, guard);
 
   return httpServer;

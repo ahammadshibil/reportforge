@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { CalendarClock, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, Plus, Trash2, Play } from "lucide-react";
 import type { Schedule } from "@shared/schema";
 
 export default function Schedules() {
@@ -87,6 +87,24 @@ export default function Schedules() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/workspaces", current?.id, "schedules"] });
       toast({ title: "Removed" });
+    },
+  });
+
+  const runNow = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await apiRequest("POST", `/api/schedules/${id}/run`);
+      return r.json();
+    },
+    onSuccess: (r: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces", current?.id, "schedules"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${current?.id}/assets`] });
+      toast({
+        title: r?.delivered ? `Delivered via ${r.deliveryProvider}` : "Generated",
+        description: r?.deliveryError ? `Note: ${r.deliveryError}` : undefined,
+      });
+    },
+    onError: (e: any) => {
+      toast({ title: "Run failed", description: e?.message ?? "" });
     },
   });
 
@@ -191,6 +209,16 @@ export default function Schedules() {
                   {s.nextRunAt ? new Date(s.nextRunAt).toLocaleDateString() : "—"}
                 </div>
               </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => runNow.mutate(s.id)}
+                disabled={runNow.isPending}
+                data-testid={`button-run-${s.id}`}
+              >
+                <Play className="h-4 w-4 mr-1.5" />
+                Run now
+              </Button>
               <Switch
                 checked={!!s.enabled}
                 onCheckedChange={(c) => update.mutate({ id: s.id, body: { enabled: c ? 1 : 0 } })}

@@ -117,7 +117,9 @@ function chunkByHeadings(text: string): { heading: string; body: string }[] {
   return groups.slice(0, 6);
 }
 
-export function synthesize(args: {
+// Extractive (offline) synthesizer. Phase 3 wraps this with an LLM-aware
+// async entry point that falls back here when ANTHROPIC_API_KEY is absent.
+export function synthesizeExtractive(args: {
   title: string;
   prompt: string;
   tone: "formal" | "conversational" | "punchy";
@@ -185,4 +187,24 @@ export function synthesize(args: {
     metrics,
     callouts: callouts.slice(0, 3),
   };
+}
+
+// Async entrypoint. Phase 3 will swap to Claude when ANTHROPIC_API_KEY is set.
+export async function synthesize(args: {
+  title: string;
+  prompt: string;
+  tone: "formal" | "conversational" | "punchy";
+  sources: Source[];
+  kind: "newsletter" | "report" | "deck";
+}): Promise<Outline> {
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      // @ts-ignore — Phase 3 module; falls back gracefully if missing
+      const { synthesizeWithLLM } = await import("./llm.js");
+      return await synthesizeWithLLM(args);
+    } catch (e) {
+      console.error("[synthesizer] LLM path failed, falling back to extractive:", e);
+    }
+  }
+  return synthesizeExtractive(args);
 }

@@ -7,12 +7,16 @@ import {
   Library,
   CalendarClock,
   Settings,
+  Plug,
   Moon,
   Sun,
   ChevronDown,
+  LogOut,
 } from "lucide-react";
 import { useTheme } from "@/lib/themeContext";
 import { useWorkspace } from "@/lib/workspaceContext";
+import { useBrand } from "@/lib/brandContext";
+import { useAuth } from "@/lib/authContext";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -26,29 +30,25 @@ import { Button } from "@/components/ui/button";
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/sources", label: "Sources", icon: FileStack },
+  { href: "/connections", label: "Connections", icon: Plug },
   { href: "/generate", label: "Generate", icon: Sparkles },
   { href: "/library", label: "Library", icon: Library },
   { href: "/schedules", label: "Schedules", icon: CalendarClock },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-function Logo() {
+function BrandMark() {
+  const brand = useBrand();
+  if (brand.logoUrl) {
+    return <img src={brand.logoUrl} alt={brand.name} className="h-6" />;
+  }
   return (
-    <svg
-      viewBox="0 0 32 32"
-      width="22"
-      height="22"
-      fill="none"
-      aria-label="ReportForge"
+    <div
+      className="h-7 w-7 rounded-md grid place-items-center text-[11px] font-semibold text-white shrink-0"
+      style={{ background: brand.color }}
     >
-      <rect width="32" height="32" rx="7" fill="hsl(var(--sidebar-primary))" />
-      <path
-        d="M9 10h14M9 16h14M9 22h9"
-        stroke="hsl(var(--sidebar-primary-foreground))"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-      />
-    </svg>
+      {brand.logoText}
+    </div>
   );
 }
 
@@ -56,6 +56,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { theme, toggle } = useTheme();
   const { workspaces, current, setCurrentId } = useWorkspace();
+  const brand = useBrand();
+  const { user, logout, configured } = useAuth();
 
   return (
     <div
@@ -66,14 +68,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       }}
       data-testid="app-shell"
     >
-      {/* Sidebar */}
       <aside
         className="row-span-2 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col overflow-y-auto"
         style={{ overscrollBehavior: "contain" }}
       >
         <div className="px-5 py-5 flex items-center gap-2.5 border-b border-sidebar-border">
-          <Logo />
-          <div className="font-semibold tracking-tight text-[15px]">ReportForge</div>
+          <BrandMark />
+          <div className="font-semibold tracking-tight text-[15px]">{brand.name}</div>
         </div>
 
         <nav className="flex-1 p-3 space-y-0.5">
@@ -110,7 +111,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 <div
                   className="h-7 w-7 rounded-md grid place-items-center text-[11px] font-semibold shrink-0"
-                  style={{ background: current?.brandColor || "#0f766e", color: "white" }}
+                  style={{ background: current?.brandColor || brand.color, color: "white" }}
                 >
                   {current?.logoText || current?.name?.[0] || "W"}
                 </div>
@@ -134,7 +135,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 >
                   <div
                     className="h-5 w-5 rounded grid place-items-center text-[10px] font-semibold mr-2 text-white"
-                    style={{ background: w.brandColor || "#0f766e" }}
+                    style={{ background: w.brandColor || brand.color }}
                   >
                     {w.logoText || w.name[0]}
                   </div>
@@ -147,7 +148,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* Header */}
       <header
         className="bg-background/80 backdrop-blur border-b border-border sticky top-0 z-10 flex items-center justify-between px-6 py-3"
         data-testid="app-header"
@@ -169,10 +169,24 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
+          {configured && user && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" data-testid="button-user-menu">
+                  {user.email}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => logout()} data-testid="item-logout">
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </header>
 
-      {/* Main */}
       <main
         className="overflow-y-auto bg-background"
         style={{ overscrollBehavior: "contain" }}

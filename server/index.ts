@@ -1,12 +1,31 @@
 import "dotenv/config";
 import express, { Response, NextFunction } from 'express';
 import type { Request } from 'express';
+import session from "express-session";
+import createMemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
 
 const app = express();
 const httpServer = createServer(app);
+
+const MemoryStore = createMemoryStore(session);
+app.use(
+  session({
+    name: "rf.sid",
+    secret: process.env.SESSION_SECRET || "dev-only-change-me",
+    resave: false,
+    saveUninitialized: false,
+    store: new MemoryStore({ checkPeriod: 24 * 60 * 60 * 1000 }),
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 1000 * 60 * 60 * 24 * 30,
+    },
+  })
+);
 
 declare module "http" {
   interface IncomingMessage {

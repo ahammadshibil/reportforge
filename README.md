@@ -1,57 +1,103 @@
 # ReportForge
 
-Autonomous reporting dashboard. React + Express + Tailwind + shadcn/ui frontend with a Node/Express backend that generates **PDFs (pdfkit)**, **PPTX decks (pptxgenjs)**, and **email-safe HTML newsletters** from your own sources.
+Whitelabel autonomous reporting dashboard. A company drops in their brand, connects their data sources (Google Drive, Notion, Airtable, URLs), and ReportForge generates branded **PDFs**, **PPTX decks**, and **email-safe HTML newsletters** on a schedule — synthesized by Claude.
+
+> **Status.** Phase 1 (whitelabel foundation: env brand + auth) is in. Phase 2 (connectors) and beyond are landing in subsequent commits — see [the roadmap](#roadmap).
 
 ## Quick Start
 
 ```bash
+cp .env.example .env       # edit ADMIN_EMAIL / ADMIN_PASSWORD / BRAND_*
 npm install
-npm run dev          # http://localhost:5000  (Express + Vite on the same port)
+npm run dev                # http://localhost:5000
 ```
 
-Production build:
+Production:
 
 ```bash
 npm run build
 NODE_ENV=production node dist/index.cjs
 ```
 
-The SQLite database lives in `data.db` at the project root. It auto-migrates on boot and seeds two demo workspaces (Speciale Invest, Northwind Labs) on first run.
+The SQLite database (`data.db`) auto-migrates and seeds two demo workspaces on first run.
+
+## Whitelabel — make it yours
+
+All branding is env-driven, so a single deploy = a single branded tenant. No code changes required.
+
+| Env var | Purpose |
+|---|---|
+| `BRAND_NAME` | App name (sidebar, page title, email subjects) |
+| `BRAND_TAGLINE` | Subtitle on login page |
+| `BRAND_COLOR` | Hex accent color — drives sidebar primary, asset chrome, email accent |
+| `BRAND_LOGO_URL` | Optional logo image (path or URL). Falls back to initials. |
+| `BRAND_LOGO_TEXT` | Initials shown when no logo image |
+| `BRAND_DOMAIN` | Domain used in email From / footers |
+| `BRAND_FOOTER` | Footer text appended to newsletters/PDFs |
+| `BRAND_SUPPORT_EMAIL` | Optional support address surfaced in UI |
+| `BRAND_THEME` | `light` / `dark` / `auto` |
+
+The brand config is exposed at `GET /api/brand` and applied at runtime — colors flow into CSS vars, logo into the sidebar, name into the title bar.
+
+## Auth
+
+Single admin per deploy. Set `ADMIN_EMAIL` plus either `ADMIN_PASSWORD` (dev) or `ADMIN_PASSWORD_HASH` (bcrypt, prod). Sessions are cookie-based via `express-session` + `memorystore`.
+
+For local development you can set `AUTH_DISABLED=1` to skip the gate entirely.
+
+## Roadmap
+
+- [x] Phase 1 — Whitelabel foundation: env brand config, session auth, login gate
+- [ ] Phase 2 — Connectors framework: Google Drive (OAuth), Notion (OAuth), Airtable (PAT), URL fetcher
+- [ ] Phase 3 — LLM synthesis: Claude-backed `synthesize()` with extractive fallback
+- [ ] Phase 4 — Autonomous loop: `node-cron` runner + email delivery (Resend / SMTP)
+- [ ] Phase 5 — Rich ingestion: PDF/CSV parsing, chart generation, asset versioning
 
 ## Architecture
 
 ### Data model — `shared/schema.ts`
-Drizzle + better-sqlite3. Four tables:
-- `workspaces` — tenant + brand color + logo mark
-- `sources` — uploaded files / pasted text / URLs, scoped per workspace
-- `assets` — generated outputs (newsletter / report / deck), with file path + metadata
+Drizzle + better-sqlite3. Tables:
+- `workspaces` — report spaces (e.g. "Weekly digest", "Sector scans"), each with their own accent color
+- `sources` — uploaded text / linked-in connector files
+- `assets` — generated outputs (newsletter / report / deck) with file path + outline JSON
 - `schedules` — recurring jobs (cadence + recipients + template)
 
 ### Backend — `server/`
 | File | What it does |
 |---|---|
-| `index.ts` | Express bootstrap, Vite middleware in dev, static serve in prod |
-| `routes.ts` | REST API — see below |
-| `storage.ts` | Drizzle storage layer with idempotent `CREATE TABLE IF NOT EXISTS` migrations |
-| `synthesizer.ts` | **Offline, deterministic** outline builder: heading-based chunking, top-keyword sentence ranking, metric extraction for `$`/`%` values. Output shape is stable so an LLM call (OpenAI/Claude) can drop in without changing the generators. |
-| `generators.ts` | Three real generators: `generatePdfReport`, `generatePptxDeck`, `generateNewsletterHtml` |
-| `seed.ts` | Seeds two demo workspaces and sample sources on first boot |
+| `index.ts` | Express bootstrap, sessions, Vite middleware in dev, static serve in prod |
+| `brand.ts` | Whitelabel brand config from env |
+| `auth.ts` | Single-admin session auth (env credentials, no user table) |
+| `routes.ts` | REST API |
+| `storage.ts` | Drizzle storage with idempotent migrations |
+| `synthesizer.ts` | Async `synthesize()` — uses Claude when `ANTHROPIC_API_KEY` is set, falls back to extractive |
+| `generators.ts` | `generatePdfReport`, `generatePptxDeck`, `generateNewsletterHtml` |
+| `connectors/` | Pluggable connectors (Google Drive, Notion, Airtable, URL) — Phase 2 |
+| `seed.ts` | Seeds demo workspaces on first boot |
 
 ### REST API
 ```
+GET    /api/brand                       # whitelabel config (public)
+
+GET    /api/auth/me                     # current session
+POST   /api/auth/login                  # { email, password }
+POST   /api/auth/logout
+
 GET    /api/workspaces
 POST   /api/workspaces
 PATCH  /api/workspaces/:id
 
-GET    /api/sources?workspaceId=
+GET    /api/workspaces/:id/sources
 POST   /api/sources
 DELETE /api/sources/:id
 
-GET    /api/assets?workspaceId=
-GET    /api/assets/:id/file        # streams the underlying PDF/PPTX/HTML
-POST   /api/generate                # body: { workspaceId, template, brief, tone, sourceIds }
+GET    /api/workspaces/:id/assets
+GET    /api/assets/:id
+GET    /api/assets/:id/file             # streams PDF/PPTX/HTML
+POST   /api/generate                    # body: { workspaceId, kind, title, prompt, sourceIds, tone }
+DELETE /api/assets/:id
 
-GET    /api/schedules?workspaceId=
+GET    /api/workspaces/:id/schedules
 POST   /api/schedules
 PATCH  /api/schedules/:id
 DELETE /api/schedules/:id
@@ -59,34 +105,32 @@ DELETE /api/schedules/:id
 
 ### Generation pipeline
 ```
-sources ─▶ synthesizer.buildOutline() ─▶ Outline {
-                                           title, subtitle,
-                                           executiveSummary,
-                                           sections[], metrics[], callouts[]
-                                         }
-                                           │
-                          ┌────────────────┼────────────────┐
-                          ▼                ▼                ▼
-                generatePdfReport  generatePptxDeck  generateNewsletterHtml
-                  (pdfkit)         (pptxgenjs)        (HTML string)
-                          │                │                │
-                          └─────── written to /generated ───┘
-                                           │
-                                           ▼
-                                  asset row in SQLite
+sources ─▶ synthesize() ─▶ Outline {
+              title, subtitle,         (LLM via @anthropic-ai/sdk
+              executiveSummary,         when ANTHROPIC_API_KEY set,
+              sections[],               extractive otherwise)
+              metrics[], callouts[]
+           }
+              │
+   ┌──────────┼──────────┐
+   ▼          ▼          ▼
+  PDF       PPTX     HTML newsletter
+   │          │          │
+   └─── /generated/ ──────┘
+              │
+              ▼
+       asset row in SQLite
 ```
 
-### Swapping in an LLM
-The `Outline` interface in `server/synthesizer.ts` is the contract. To swap the extractive synthesizer for an LLM, replace `buildOutline()` with a call to your model that returns the same shape. Generators do not need to change.
-
-## Frontend — `client/src/`
-- Wouter hash routing (required for iframe-safe deployment)
+### Frontend — `client/src/`
+- Wouter hash routing (iframe-safe)
 - TanStack Query v5 for all server state
-- shadcn/ui components, Tailwind v3, dark mode via class
-- Pages: Overview, Sources, Generate, Library, Schedules, Settings
+- shadcn/ui + Tailwind v3, dark mode via class
+- Pages: Overview, Sources, Connections, Generate, Library, Schedules, Settings, Login
+- `BrandProvider` injects brand color into CSS vars at runtime
 
 ## Notes
-- SQLite via better-sqlite3 is **synchronous** — queries use `.get()` / `.all()` / `.run()`
-- No `localStorage` anywhere (sandboxed iframe blocks it) — theme + workspace are React state
+- SQLite via better-sqlite3 is synchronous — queries use `.get()` / `.all()` / `.run()`
 - `pptxgenjs` ESM/CJS interop: `const PptxGenJS: any = (pptxgen as any).default ?? pptxgen`
-- pdfkit page numbering uses `bufferPages: true` and `bufferedPageRange()` — loop from `range.start` to `range.start + range.count`
+- pdfkit page numbering uses `bufferPages: true` and `bufferedPageRange()`
+- Sessions are stored in `memorystore` — for production use, swap to a persistent store (Redis, SQLite-backed) before scaling

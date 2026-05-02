@@ -1,0 +1,94 @@
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+
+// Companies / workspaces
+export const workspaces = sqliteTable("workspaces", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  industry: text("industry"),
+  brandColor: text("brand_color").default("#0f766e"),
+  logoText: text("logo_text"),
+  createdAt: integer("created_at").notNull(),
+});
+
+// Data sources uploaded to a workspace (PDF text, CSV summary, URL fetch, raw notes)
+export const sources = sqliteTable("sources", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: integer("workspace_id").notNull(),
+  title: text("title").notNull(),
+  type: text("type").notNull(), // 'pdf' | 'csv' | 'url' | 'note'
+  status: text("status").notNull().default("ready"), // 'processing' | 'ready' | 'error'
+  content: text("content").notNull(), // extracted text
+  meta: text("meta"), // JSON string
+  createdAt: integer("created_at").notNull(),
+});
+
+// Generated assets: newsletter, report (pdf), deck (pptx)
+export const assets = sqliteTable("assets", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: integer("workspace_id").notNull(),
+  title: text("title").notNull(),
+  kind: text("kind").notNull(), // 'newsletter' | 'report' | 'deck'
+  prompt: text("prompt"),
+  status: text("status").notNull().default("ready"), // 'generating' | 'ready' | 'failed'
+  filePath: text("file_path"), // for binary outputs
+  contentHtml: text("content_html"), // for newsletters
+  outline: text("outline"), // JSON outline used to generate
+  sourceIds: text("source_ids"), // JSON array of source ids
+  createdAt: integer("created_at").notNull(),
+});
+
+// Recurring schedules
+export const schedules = sqliteTable("schedules", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: integer("workspace_id").notNull(),
+  name: text("name").notNull(),
+  kind: text("kind").notNull(), // 'newsletter' | 'report' | 'deck'
+  cadence: text("cadence").notNull(), // 'daily' | 'weekly' | 'monthly'
+  prompt: text("prompt").notNull(),
+  recipients: text("recipients"), // comma-separated emails
+  enabled: integer("enabled").notNull().default(1),
+  lastRunAt: integer("last_run_at"),
+  nextRunAt: integer("next_run_at"),
+  createdAt: integer("created_at").notNull(),
+});
+
+// Insert schemas
+export const insertWorkspaceSchema = createInsertSchema(workspaces).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertSourceSchema = createInsertSchema(sources).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertAssetSchema = createInsertSchema(assets).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertScheduleSchema = createInsertSchema(schedules).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Types
+export type Workspace = typeof workspaces.$inferSelect;
+export type InsertWorkspace = z.infer<typeof insertWorkspaceSchema>;
+export type Source = typeof sources.$inferSelect;
+export type InsertSource = z.infer<typeof insertSourceSchema>;
+export type Asset = typeof assets.$inferSelect;
+export type InsertAsset = z.infer<typeof insertAssetSchema>;
+export type Schedule = typeof schedules.$inferSelect;
+export type InsertSchedule = z.infer<typeof insertScheduleSchema>;
+
+// API request shapes
+export const generateRequestSchema = z.object({
+  workspaceId: z.number(),
+  kind: z.enum(["newsletter", "report", "deck"]),
+  title: z.string().min(1),
+  prompt: z.string().min(1),
+  sourceIds: z.array(z.number()).default([]),
+  tone: z.enum(["formal", "conversational", "punchy"]).default("formal"),
+});
+export type GenerateRequest = z.infer<typeof generateRequestSchema>;

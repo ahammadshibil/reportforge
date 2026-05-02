@@ -3,6 +3,7 @@ import {
   sources,
   assets,
   schedules,
+  connections,
 } from "@shared/schema";
 import type {
   Workspace,
@@ -13,6 +14,8 @@ import type {
   InsertAsset,
   Schedule,
   InsertSchedule,
+  Connection,
+  InsertConnection,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -67,7 +70,31 @@ CREATE TABLE IF NOT EXISTS schedules (
   next_run_at INTEGER,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS connections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  config TEXT NOT NULL,
+  account_email TEXT,
+  last_synced_at INTEGER,
+  created_at INTEGER NOT NULL
+);
 `);
+
+// Additive migrations — safe to run repeatedly. Each ALTER is wrapped so
+// missing-column adds succeed and re-runs (column already exists) silently noop.
+function tryAlter(sql: string) {
+  try {
+    sqlite.exec(sql);
+  } catch {
+    /* column exists or other benign — skip */
+  }
+}
+tryAlter(`ALTER TABLE sources ADD COLUMN connection_id INTEGER`);
+tryAlter(`ALTER TABLE sources ADD COLUMN external_id TEXT`);
+tryAlter(`ALTER TABLE sources ADD COLUMN synced_at INTEGER`);
 
 export const db = drizzle(sqlite);
 
@@ -81,7 +108,9 @@ export interface IStorage {
   listSources(workspaceId: number): Source[];
   getSource(id: number): Source | undefined;
   createSource(s: InsertSource): Source;
+  updateSource(id: number, s: Partial<InsertSource>): Source | undefined;
   deleteSource(id: number): void;
+  findSourceByExternalId(connectionId: number, externalId: string): Source | undefined;
   // Assets
   listAssets(workspaceId: number): Asset[];
   getAsset(id: number): Asset | undefined;
@@ -90,9 +119,17 @@ export interface IStorage {
   deleteAsset(id: number): void;
   // Schedules
   listSchedules(workspaceId: number): Schedule[];
+  listAllSchedules(): Schedule[];
+  getSchedule(id: number): Schedule | undefined;
   createSchedule(s: InsertSchedule): Schedule;
   updateSchedule(id: number, s: Partial<InsertSchedule>): Schedule | undefined;
   deleteSchedule(id: number): void;
+  // Connections
+  listConnections(workspaceId: number): Connection[];
+  getConnection(id: number): Connection | undefined;
+  createConnection(c: InsertConnection): Connection;
+  updateConnection(id: number, c: Partial<InsertConnection>): Connection | undefined;
+  deleteConnection(id: number): void;
 }
 
 class DatabaseStorage implements IStorage {
@@ -131,8 +168,19 @@ class DatabaseStorage implements IStorage {
       .returning()
       .get();
   }
+  updateSource(id: number, s: Partial<InsertSource>) {
+    return db.update(sources).set(s).where(eq(sources.id, id)).returning().get();
+  }
   deleteSource(id: number) {
     db.delete(sources).where(eq(sources.id, id)).run();
+  }
+  findSourceByExternalId(connectionId: number, externalId: string) {
+    return db
+      .select()
+      .from(sources)
+      .where(eq(sources.connectionId, connectionId))
+      .all()
+      .find((s) => s.externalId === externalId);
   }
 
   listAssets(workspaceId: number) {
@@ -168,6 +216,12 @@ class DatabaseStorage implements IStorage {
       .orderBy(desc(schedules.createdAt))
       .all();
   }
+  listAllSchedules() {
+    return db.select().from(schedules).all();
+  }
+  getSchedule(id: number) {
+    return db.select().from(schedules).where(eq(schedules.id, id)).get();
+  }
   createSchedule(s: InsertSchedule) {
     return db
       .insert(schedules)
@@ -180,6 +234,31 @@ class DatabaseStorage implements IStorage {
   }
   deleteSchedule(id: number) {
     db.delete(schedules).where(eq(schedules.id, id)).run();
+  }
+
+  listConnections(workspaceId: number) {
+    return db
+      .select()
+      .from(connections)
+      .where(eq(connections.workspaceId, workspaceId))
+      .orderBy(desc(connections.createdAt))
+      .all();
+  }
+  getConnection(id: number) {
+    return db.select().from(connections).where(eq(connections.id, id)).get();
+  }
+  createConnection(c: InsertConnection) {
+    return db
+      .insert(connections)
+      .values({ ...c, createdAt: Date.now() })
+      .returning()
+      .get();
+  }
+  updateConnection(id: number, c: Partial<InsertConnection>) {
+    return db.update(connections).set(c).where(eq(connections.id, id)).returning().get();
+  }
+  deleteConnection(id: number) {
+    db.delete(connections).where(eq(connections.id, id)).run();
   }
 }
 

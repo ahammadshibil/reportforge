@@ -17,10 +17,26 @@ export const sources = sqliteTable("sources", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   workspaceId: integer("workspace_id").notNull(),
   title: text("title").notNull(),
-  type: text("type").notNull(), // 'pdf' | 'csv' | 'url' | 'note'
+  type: text("type").notNull(), // 'pdf' | 'csv' | 'url' | 'note' | 'gdrive' | 'notion' | 'airtable'
   status: text("status").notNull().default("ready"), // 'processing' | 'ready' | 'error'
   content: text("content").notNull(), // extracted text
   meta: text("meta"), // JSON string
+  connectionId: integer("connection_id"), // null for manual sources
+  externalId: text("external_id"), // upstream id (drive file id, notion page id, etc.)
+  syncedAt: integer("synced_at"),
+  createdAt: integer("created_at").notNull(),
+});
+
+// Connections — OAuth tokens / API keys for external data sources
+export const connections = sqliteTable("connections", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: integer("workspace_id").notNull(),
+  type: text("type").notNull(), // 'google_drive' | 'notion' | 'airtable' | 'url'
+  name: text("name").notNull(),
+  status: text("status").notNull().default("active"), // 'active' | 'expired' | 'error'
+  config: text("config").notNull(), // JSON: { accessToken, refreshToken, expiresAt, ... }
+  accountEmail: text("account_email"),
+  lastSyncedAt: integer("last_synced_at"),
   createdAt: integer("created_at").notNull(),
 });
 
@@ -63,6 +79,10 @@ export const insertSourceSchema = createInsertSchema(sources).omit({
   id: true,
   createdAt: true,
 });
+export const insertConnectionSchema = createInsertSchema(connections).omit({
+  id: true,
+  createdAt: true,
+});
 export const insertAssetSchema = createInsertSchema(assets).omit({
   id: true,
   createdAt: true,
@@ -77,6 +97,8 @@ export type Workspace = typeof workspaces.$inferSelect;
 export type InsertWorkspace = z.infer<typeof insertWorkspaceSchema>;
 export type Source = typeof sources.$inferSelect;
 export type InsertSource = z.infer<typeof insertSourceSchema>;
+export type Connection = typeof connections.$inferSelect;
+export type InsertConnection = z.infer<typeof insertConnectionSchema>;
 export type Asset = typeof assets.$inferSelect;
 export type InsertAsset = z.infer<typeof insertAssetSchema>;
 export type Schedule = typeof schedules.$inferSelect;

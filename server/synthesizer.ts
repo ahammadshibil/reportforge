@@ -189,7 +189,8 @@ export function synthesizeExtractive(args: {
   };
 }
 
-// Async entrypoint. Phase 3 will swap to Claude when ANTHROPIC_API_KEY is set.
+// Async entrypoint. Routes to the LLM when any provider key is configured;
+// falls back to the offline extractive path otherwise (or on LLM error).
 export async function synthesize(args: {
   title: string;
   prompt: string;
@@ -197,9 +198,14 @@ export async function synthesize(args: {
   sources: Source[];
   kind: "newsletter" | "report" | "deck";
 }): Promise<Outline> {
-  if (process.env.ANTHROPIC_API_KEY) {
+  const llmConfigured =
+    !!process.env.ANTHROPIC_API_KEY ||
+    !!process.env.OPENAI_API_KEY ||
+    !!process.env.GEMINI_API_KEY ||
+    !!process.env.GOOGLE_API_KEY ||
+    !!process.env.LLM_API_KEY;
+  if (llmConfigured) {
     try {
-      // @ts-ignore — Phase 3 module; falls back gracefully if missing
       const { synthesizeWithLLM } = await import("./llm.js");
       return await synthesizeWithLLM(args);
     } catch (e) {

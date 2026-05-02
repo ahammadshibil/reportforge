@@ -20,6 +20,7 @@ import { seedIfEmpty } from "./seed";
 import { getBrand } from "./brand";
 import { authConfigured, currentUser, login, requireAuth } from "./auth";
 import { registerConnectorRoutes } from "./connectors/routes";
+import { llmStatus } from "./llm";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -33,6 +34,11 @@ export async function registerRoutes(
   // ----- Brand (public) -----
   app.get("/api/brand", (_req, res) => {
     res.json(getBrand());
+  });
+
+  // ----- LLM status (auth required) -----
+  app.get("/api/llm/status", requireAuth, (_req, res) => {
+    res.json(llmStatus());
   });
 
   // ----- Auth (public) -----

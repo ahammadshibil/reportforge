@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Trash2, Plus, FileText, Link as LinkIcon, NotebookPen, Table2 } from "lucide-react";
+import { Trash2, Plus, FileText, Link as LinkIcon, NotebookPen, Table2, Upload, Globe } from "lucide-react";
 import type { Source } from "@shared/schema";
 
 const TYPE_META: Record<string, { label: string; icon: any }> = {
@@ -95,6 +95,48 @@ export default function Sources() {
     else setType("note");
   };
 
+  const uploadMut = useMutation({
+    mutationFn: async (file: File) => {
+      if (!current) throw new Error("no workspace");
+      const buf = await file.arrayBuffer();
+      const contentBase64 = btoa(
+        new Uint8Array(buf).reduce((acc, b) => acc + String.fromCharCode(b), "")
+      );
+      const r = await apiRequest("POST", "/api/sources/upload", {
+        workspaceId: current.id,
+        filename: file.name,
+        contentBase64,
+        mimeType: file.type || "application/octet-stream",
+      });
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces", current?.id, "sources"] });
+      toast({ title: "Uploaded and parsed" });
+    },
+    onError: (e: any) => toast({ title: "Upload failed", description: e?.message }),
+  });
+
+  const [urlOpen, setUrlOpen] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const urlMut = useMutation({
+    mutationFn: async () => {
+      if (!current) throw new Error("no workspace");
+      const r = await apiRequest("POST", "/api/sources/url", {
+        workspaceId: current.id,
+        url: urlInput,
+      });
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces", current?.id, "sources"] });
+      toast({ title: "Fetched and added" });
+      setUrlOpen(false);
+      setUrlInput("");
+    },
+    onError: (e: any) => toast({ title: "Fetch failed", description: e?.message }),
+  });
+
   return (
     <div className="px-6 py-6 max-w-7xl mx-auto">
       <div className="flex items-end justify-between mb-6">
@@ -107,12 +149,68 @@ export default function Sources() {
             Material the synthesizer pulls from when generating outputs.
           </p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-add-source">
-              <Plus className="h-4 w-4 mr-1.5" /> Add source
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-2">
+          <label>
+            <input
+              type="file"
+              accept=".pdf,.csv,.txt,.md,.json"
+              className="hidden"
+              data-testid="input-upload-file"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadMut.mutate(f);
+                e.currentTarget.value = "";
+              }}
+            />
+            <span>
+              <Button asChild variant="outline" disabled={uploadMut.isPending}>
+                <span>
+                  <Upload className="h-4 w-4 mr-1.5" />
+                  {uploadMut.isPending ? "Uploading…" : "Upload file"}
+                </span>
+              </Button>
+            </span>
+          </label>
+          <Dialog open={urlOpen} onOpenChange={setUrlOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" data-testid="button-fetch-url">
+                <Globe className="h-4 w-4 mr-1.5" /> Fetch URL
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Fetch URL as source</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label>URL</Label>
+                <Input
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  placeholder="https://example.com/article"
+                  data-testid="input-fetch-url"
+                />
+                <p className="text-xs text-muted-foreground">
+                  HTML pages are stripped to readable text. PDFs are parsed automatically.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setUrlOpen(false)}>Cancel</Button>
+                <Button
+                  onClick={() => urlMut.mutate()}
+                  disabled={!urlInput || urlMut.isPending}
+                  data-testid="button-fetch-go"
+                >
+                  {urlMut.isPending ? "Fetching…" : "Fetch"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-source">
+                <Plus className="h-4 w-4 mr-1.5" /> Add source
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-w-xl">
             <DialogHeader>
               <DialogTitle>Add source</DialogTitle>
@@ -179,7 +277,8 @@ export default function Sources() {
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <Card className="overflow-hidden">

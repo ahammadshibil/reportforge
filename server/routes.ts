@@ -103,6 +103,62 @@ export async function registerRoutes(
     res.json({ ok: true });
   });
 
+  // Upload a file (PDF, CSV, txt) and turn it into a source.
+  // body: { workspaceId, filename, contentBase64, mimeType }
+  app.post("/api/sources/upload", guard, async (req, res) => {
+    const workspaceId = Number(req.body?.workspaceId);
+    const filename = String(req.body?.filename || "");
+    const contentBase64 = String(req.body?.contentBase64 || "");
+    const mimeType = String(req.body?.mimeType || "");
+    if (!workspaceId || !filename || !contentBase64) {
+      return res.status(400).json({ error: "workspaceId, filename, contentBase64 required" });
+    }
+    try {
+      const { ingestUpload } = await import("./ingest");
+      const ing = await ingestUpload({ filename, contentBase64, mimeType });
+      const source = storage.createSource({
+        workspaceId,
+        title: ing.title,
+        type: ing.type,
+        status: "ready",
+        content: ing.content,
+        meta: ing.meta ? JSON.stringify(ing.meta) : null,
+        connectionId: null,
+        externalId: null,
+        syncedAt: null,
+      });
+      res.json(source);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "ingest_failed" });
+    }
+  });
+
+  // Fetch + ingest a URL directly (without setting up a connector).
+  // body: { workspaceId, url }
+  app.post("/api/sources/url", guard, async (req, res) => {
+    const workspaceId = Number(req.body?.workspaceId);
+    const url = String(req.body?.url || "");
+    if (!workspaceId || !url) return res.status(400).json({ error: "workspaceId and url required" });
+    try {
+      const { ingestUrl } = await import("./ingest");
+      const ing = await ingestUrl(url);
+      const source = storage.createSource({
+        workspaceId,
+        title: ing.title,
+        type: ing.type,
+        status: "ready",
+        content: ing.content,
+        meta: ing.meta ? JSON.stringify(ing.meta) : null,
+        connectionId: null,
+        externalId: null,
+        syncedAt: null,
+      });
+      res.json(source);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "fetch_failed" });
+    }
+  });
+
   // ----- Assets -----
   app.get("/api/workspaces/:id/assets", guard, (req, res) => {
     res.json(storage.listAssets(Number(req.params.id)));

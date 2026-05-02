@@ -2,7 +2,7 @@
 
 Whitelabel autonomous reporting dashboard. A company drops in their brand, connects their data sources (Google Drive, Notion, Airtable, URLs), and ReportForge generates branded **PDFs**, **PPTX decks**, and **email-safe HTML newsletters** on a schedule — synthesized by Claude.
 
-> **Status.** Phase 1 (whitelabel foundation: env brand + auth) is in. Phase 2 (connectors) and beyond are landing in subsequent commits — see [the roadmap](#roadmap).
+> **Status.** All five build phases shipped — whitelabel branding, auth, connectors (Google Drive / Notion / Airtable / URLs), multi-provider LLM synthesis, autonomous scheduler, email delivery, and direct PDF/CSV/URL ingestion. See [Roadmap](#roadmap).
 
 ## Quick Start
 
@@ -48,10 +48,11 @@ For local development you can set `AUTH_DISABLED=1` to skip the gate entirely.
 ## Roadmap
 
 - [x] Phase 1 — Whitelabel foundation: env brand config, session auth, login gate
-- [ ] Phase 2 — Connectors framework: Google Drive (OAuth), Notion (OAuth), Airtable (PAT), URL fetcher
-- [ ] Phase 3 — LLM synthesis: Claude-backed `synthesize()` with extractive fallback
-- [ ] Phase 4 — Autonomous loop: `node-cron` runner + email delivery (Resend / SMTP)
-- [ ] Phase 5 — Rich ingestion: PDF/CSV parsing, chart generation, asset versioning
+- [x] Phase 2 — Connectors: Google Drive (OAuth), Notion (OAuth), Airtable (PAT), URL bookmark lists
+- [x] Phase 3 — LLM synthesis: Anthropic / OpenAI / Gemini / any OpenAI-compatible endpoint, extractive fallback
+- [x] Phase 4 — Autonomous loop: `setInterval` scheduler + email via Resend (preferred) / SMTP (nodemailer)
+- [x] Phase 5 — Direct ingestion: PDF parsing (pdf-parse), CSV row rendering, URL fetch + HTML strip
+- [ ] Future — server-side chart generation, asset versioning, multi-recipient personalization, Slack/Teams delivery
 
 ## Architecture
 

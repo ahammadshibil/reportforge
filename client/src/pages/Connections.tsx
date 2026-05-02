@@ -4,6 +4,8 @@ import { apiRequest, queryClient, apiUrl } from "@/lib/queryClient";
 import { useWorkspace } from "@/lib/workspaceContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -51,6 +53,7 @@ export default function Connections() {
   const { current } = useWorkspace();
   const { toast } = useToast();
   const [browserConn, setBrowserConn] = useState<Connection | null>(null);
+  const [keyType, setKeyType] = useState<ConnectorType | null>(null);
 
   const { data: types = [] } = useQuery<ConnectorType[]>({
     queryKey: ["/api/connections/types"],
@@ -137,7 +140,11 @@ export default function Connections() {
             <button
               key={t.id}
               disabled={!t.available}
-              onClick={() => t.authMode === "oauth" && startOAuth(t.id)}
+              onClick={() => {
+                if (!t.available) return;
+                if (t.authMode === "oauth") startOAuth(t.id);
+                else setKeyType(t);
+              }}
               className="text-left rounded-lg border border-border p-4 hover-elevate disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid={`add-${t.id}`}
             >
@@ -211,7 +218,132 @@ export default function Connections() {
       </section>
 
       <BrowseDialog conn={browserConn} onClose={() => setBrowserConn(null)} />
+      <KeyDialog type={keyType} onClose={() => setKeyType(null)} />
     </div>
+  );
+}
+
+function KeyDialog({
+  type,
+  onClose,
+}: {
+  type: ConnectorType | null;
+  onClose: () => void;
+}) {
+  const { current } = useWorkspace();
+  const { toast } = useToast();
+  const [apiKey, setApiKey] = useState("");
+  const [baseId, setBaseId] = useState("");
+  const [urls, setUrls] = useState("");
+  const [name, setName] = useState("");
+
+  useEffect(() => {
+    if (type) {
+      setApiKey("");
+      setBaseId("");
+      setUrls("");
+      setName("");
+    }
+  }, [type]);
+
+  const createMut = useMutation({
+    mutationFn: async () => {
+      if (!type || !current) return;
+      const body: Record<string, unknown> = { workspaceId: current.id };
+      if (type.id === "airtable") {
+        body.apiKey = apiKey;
+        if (baseId) body.baseId = baseId;
+      } else if (type.id === "url") {
+        body.urls = urls;
+        if (name) body.name = name;
+      }
+      await apiRequest("POST", `/api/connections/${type.id}/key`, body);
+    },
+    onSuccess: () => {
+      toast({ title: "Connection added" });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/workspaces/${current?.id}/connections`],
+      });
+      onClose();
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to connect", description: e?.message ?? "" });
+    },
+  });
+
+  return (
+    <Dialog open={!!type} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Connect {type?.label}</DialogTitle>
+        </DialogHeader>
+        {type?.id === "airtable" && (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="airtable-key">Personal Access Token</Label>
+              <Input
+                id="airtable-key"
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="patXXXXXXXXXXXXXX..."
+                data-testid="input-airtable-key"
+              />
+              <p className="text-xs text-muted-foreground">
+                Generate at airtable.com/create/tokens with{" "}
+                <code>data.records:read</code> + <code>schema.bases:read</code>.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="airtable-base">Base ID (optional)</Label>
+              <Input
+                id="airtable-base"
+                value={baseId}
+                onChange={(e) => setBaseId(e.target.value)}
+                placeholder="appXXXXXXXXXXXXXX"
+                data-testid="input-airtable-base"
+              />
+            </div>
+          </div>
+        )}
+        {type?.id === "url" && (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="url-name">Name (optional)</Label>
+              <Input
+                id="url-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Industry blogs"
+                data-testid="input-url-name"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="url-list">URLs</Label>
+              <Textarea
+                id="url-list"
+                value={urls}
+                onChange={(e) => setUrls(e.target.value)}
+                placeholder={"https://example.com/post-1\nhttps://example.com/post-2"}
+                rows={6}
+                data-testid="input-url-list"
+              />
+              <p className="text-xs text-muted-foreground">One URL per line.</p>
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => createMut.mutate()}
+            disabled={createMut.isPending}
+            data-testid="button-connect"
+          >
+            {createMut.isPending ? "Connecting…" : "Connect"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

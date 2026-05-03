@@ -12,14 +12,73 @@ npm install
 npm run dev                # http://localhost:5000
 ```
 
-Production:
+## Deploy to production
+
+### Cheapest path: Fly.io (~$0–5/month)
+
+A `Dockerfile` and `fly.toml` are committed. One-time setup:
+
+```bash
+# 1. Install flyctl: https://fly.io/docs/hands-on/install-flyctl/
+fly auth login
+
+# 2. Create the app + volume + secrets
+fly apps create reportforge                              # pick your name; edit fly.toml to match
+fly volumes create reportforge_data --size 1 --region bom
+fly secrets set \
+  SESSION_SECRET=$(openssl rand -hex 32) \
+  ADMIN_EMAIL=you@example.com \
+  ADMIN_PASSWORD='change-me-to-something-strong' \
+  GEMINI_API_KEY=AIza...                                 # see "Cheap LLM" below
+fly secrets set BRAND_NAME='Your Brand' BRAND_COLOR='#0f766e'  # optional
+
+# 3. Deploy
+fly deploy
+```
+
+`auto_stop_machines = "stop"` in `fly.toml` scales to zero when idle, then wakes on the first request — costs $0 most months on a personal deploy.
+
+### Other one-click hosts
+
+Any platform that runs Docker + can mount a persistent volume:
+
+| Platform | Notes |
+|---|---|
+| **Railway** | `railway up` after the Dockerfile is in. ~$5/mo. |
+| **Render** | Web Service from Dockerfile + Disk add-on for `/data`. ~$7/mo. |
+| **DigitalOcean App Platform** | Docker source + 1GB volume. ~$5/mo. |
+| **Hetzner CX22** | €4/mo VM, run `docker compose up -d`. Most control. |
+| **Self-host on a Mac mini / Pi** | Free. Set up Cloudflare Tunnel for HTTPS. |
+
+> SQLite needs persistent disk. Fully-serverless platforms (Vercel, Cloudflare Workers) don't fit without swapping the storage layer.
+
+### Cheap LLM keys (any one is enough)
+
+ReportForge uses LLMs for synthesis (text → JSON outline) and template extraction (image → JSON schema). Costs per generation, assuming ~10K input + 2K output tokens:
+
+| Provider · Model | $/M in | $/M out | Per-gen | Vision | Free tier |
+|---|---|---|---|---|---|
+| **Gemini 2.0 Flash** ⭐ | $0.075 | $0.30 | **~$0.001** | ✅ | 1,500 req/day |
+| Gemini 2.0 Flash-Lite | $0.04 | $0.15 | ~$0.0005 | ✅ | yes |
+| OpenAI gpt-4o-mini | $0.15 | $0.60 | ~$0.002 | ✅ | — |
+| Anthropic Claude Haiku 4.5 | $1 | $5 | ~$0.012 | ✅ | — |
+| Llama 3.3 70B (Groq) | $0.59 | $0.79 | ~$0.008 | text-only | generous |
+| DeepSeek V3 (OpenRouter) | $0.27 | $1.10 | ~$0.005 | text-only | — |
+| OpenAI gpt-4o | $2.50 | $10 | ~$0.025 | ✅ | — |
+| Claude Sonnet 4.6 | $3 | $15 | ~$0.035 | ✅ | — |
+
+**Recommended default:** `GEMINI_API_KEY` (`gemini-2.0-flash`). Free tier alone covers ~50 generations/day, no card on file. Vision works (template extraction works). At paid rates, **1000 generations/month = $1**. Get a key at [aistudio.google.com](https://aistudio.google.com).
+
+For "use any OpenAI-compatible endpoint" — set `LLM_PROVIDER=openai`, `LLM_API_KEY=<key>`, `LLM_BASE_URL=https://api.groq.com/openai/v1` (Groq) or `https://openrouter.ai/api/v1` (OpenRouter), and `LLM_MODEL=<their model id>`.
+
+### Local production build
 
 ```bash
 npm run build
 NODE_ENV=production node dist/index.cjs
 ```
 
-The SQLite database (`data.db`) auto-migrates and seeds two demo workspaces on first run.
+The SQLite database (`data.db`) and `generated/` outputs honor `DATA_DIR` (defaults to `.` in dev, `/data` in the Docker image).
 
 ## Whitelabel — make it yours
 

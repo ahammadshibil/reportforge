@@ -24,7 +24,12 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, desc } from "drizzle-orm";
 
-const sqlite = new Database("data.db");
+// DATA_DIR lets prod deploys point at a persistent volume mount.
+const DATA_DIR = process.env.DATA_DIR || ".";
+import fs from "node:fs";
+import path from "node:path";
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+export const sqlite = new Database(path.join(DATA_DIR, "data.db"));
 sqlite.pragma("journal_mode = WAL");
 
 // Auto-migrate (idempotent) — keeps deployment simple.

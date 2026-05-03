@@ -7,7 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Outline } from "./synthesizer";
 
-const OUTPUT_DIR = path.resolve("generated");
+// Honor DATA_DIR so generated artifacts land on the persistent volume in prod.
+const OUTPUT_DIR = path.resolve(process.env.DATA_DIR || ".", "generated");
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
 function safeFilename(s: string) {

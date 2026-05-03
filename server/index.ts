@@ -2,22 +2,28 @@ import "dotenv/config";
 import express, { Response, NextFunction } from 'express';
 import type { Request } from 'express';
 import session from "express-session";
-import createMemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
+import { sqlite } from "./storage";
+import { SqliteSessionStore } from "./sessionStore";
 
 const app = express();
 const httpServer = createServer(app);
 
-const MemoryStore = createMemoryStore(session);
+if (process.env.NODE_ENV === "production") {
+  // behind a reverse proxy (Fly, Railway, Render, nginx) — required for
+  // secure cookies and correct req.ip / X-Forwarded-Proto handling.
+  app.set("trust proxy", 1);
+}
+
 app.use(
   session({
     name: "rf.sid",
     secret: process.env.SESSION_SECRET || "dev-only-change-me",
     resave: false,
     saveUninitialized: false,
-    store: new MemoryStore({ checkPeriod: 24 * 60 * 60 * 1000 }),
+    store: new SqliteSessionStore(sqlite),
     cookie: {
       httpOnly: true,
       sameSite: "lax",

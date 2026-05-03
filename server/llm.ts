@@ -267,3 +267,120 @@ export function llmStatus() {
     configured: !!sel.apiKey,
   };
 }
+
+// ----- Vision -----
+//
+// Provider-agnostic image-to-JSON. Used by the Templates feature to extract
+// schemas from a sample document image. Vision-capable model is required —
+// callers may pass `model` to override the default text model with a
+// vision-capable one.
+
+export type VisionImage = { base64: string; mimeType: string };
+
+export async function callVisionJson(args: {
+  prompt: string;
+  images: VisionImage[];
+  modelOverride?: string;
+}): Promise<string> {
+  const sel = pickProvider();
+  if (!sel.apiKey) throw new Error("no_llm_api_key");
+  const model = args.modelOverride || sel.model;
+
+  if (sel.provider === "anthropic") {
+    return callAnthropicVision(sel.apiKey, model, sel.baseUrl, args.prompt, args.images);
+  }
+  if (sel.provider === "gemini") {
+    return callGeminiVision(sel.apiKey, model, sel.baseUrl, args.prompt, args.images);
+  }
+  return callOpenAIVision(sel.apiKey, model, sel.baseUrl, args.prompt, args.images);
+}
+
+async function callAnthropicVision(
+  apiKey: string,
+  model: string,
+  baseUrl: string | undefined,
+  prompt: string,
+  images: VisionImage[]
+): Promise<string> {
+  const url = (baseUrl || "https://api.anthropic.com") + "/v1/messages";
+  const content: any[] = images.map((img) => ({
+    type: "image",
+    source: { type: "base64", media_type: img.mimeType, data: img.base64 },
+  }));
+  content.push({ type: "text", text: prompt });
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 4096,
+      messages: [{ role: "user", content }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Anthropic vision ${res.status}: ${await res.text()}`);
+  const j = (await res.json()) as { content: Array<{ type: string; text?: string }> };
+  return (j.content || []).map((c) => c.text || "").join("");
+}
+
+async function callOpenAIVision(
+  apiKey: string,
+  model: string,
+  baseUrl: string | undefined,
+  prompt: string,
+  images: VisionImage[]
+): Promise<string> {
+  const url = (baseUrl || "https://api.openai.com/v1") + "/chat/completions";
+  const content: any[] = images.map((img) => ({
+    type: "image_url",
+    image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+  }));
+  content.push({ type: "text", text: prompt });
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content }],
+      response_format: { type: "json_object" },
+      temperature: 0.2,
+    }),
+  });
+  if (!res.ok) throw new Error(`OpenAI vision ${res.status}: ${await res.text()}`);
+  const j = (await res.json()) as { choices: Array<{ message: { content: string } }> };
+  return j.choices[0]?.message?.content ?? "";
+}
+
+async function callGeminiVision(
+  apiKey: string,
+  model: string,
+  baseUrl: string | undefined,
+  prompt: string,
+  images: VisionImage[]
+): Promise<string> {
+  const root = baseUrl || "https://generativelanguage.googleapis.com/v1beta";
+  const url = `${root}/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
+  const parts: any[] = images.map((img) => ({
+    inlineData: { mimeType: img.mimeType, data: img.base64 },
+  }));
+  parts.push({ text: prompt });
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts }],
+      generationConfig: { responseMimeType: "application/json" },
+    }),
+  });
+  if (!res.ok) throw new Error(`Gemini vision ${res.status}: ${await res.text()}`);
+  const j = (await res.json()) as {
+    candidates: Array<{ content: { parts: Array<{ text: string }> } }>;
+  };
+  return j.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ?? "";
+}

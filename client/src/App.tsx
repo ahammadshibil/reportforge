@@ -16,6 +16,8 @@ import Library from "@/pages/Library";
 import Schedules from "@/pages/Schedules";
 import Settings from "@/pages/Settings";
 import Connections from "@/pages/Connections";
+import Templates from "@/pages/Templates";
+import TemplateBuild from "@/pages/TemplateBuild";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
 
@@ -28,6 +30,8 @@ function AppRouter() {
       <Route path="/library" component={Library} />
       <Route path="/schedules" component={Schedules} />
       <Route path="/connections" component={Connections} />
+      <Route path="/templates/:id" component={TemplateBuild} />
+      <Route path="/templates" component={Templates} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

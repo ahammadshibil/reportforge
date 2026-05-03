@@ -4,6 +4,7 @@ import {
   assets,
   schedules,
   connections,
+  templates,
 } from "@shared/schema";
 import type {
   Workspace,
@@ -16,6 +17,8 @@ import type {
   InsertSchedule,
   Connection,
   InsertConnection,
+  Template,
+  InsertTemplate,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -81,6 +84,16 @@ CREATE TABLE IF NOT EXISTS connections (
   last_synced_at INTEGER,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'other',
+  schema TEXT NOT NULL,
+  preview_image TEXT,
+  brand_color TEXT,
+  created_at INTEGER NOT NULL
+);
 `);
 
 // Additive migrations — safe to run repeatedly. Each ALTER is wrapped so
@@ -130,6 +143,12 @@ export interface IStorage {
   createConnection(c: InsertConnection): Connection;
   updateConnection(id: number, c: Partial<InsertConnection>): Connection | undefined;
   deleteConnection(id: number): void;
+  // Templates
+  listTemplates(workspaceId: number): Template[];
+  getTemplate(id: number): Template | undefined;
+  createTemplate(t: InsertTemplate): Template;
+  updateTemplate(id: number, t: Partial<InsertTemplate>): Template | undefined;
+  deleteTemplate(id: number): void;
 }
 
 class DatabaseStorage implements IStorage {
@@ -259,6 +278,31 @@ class DatabaseStorage implements IStorage {
   }
   deleteConnection(id: number) {
     db.delete(connections).where(eq(connections.id, id)).run();
+  }
+
+  listTemplates(workspaceId: number) {
+    return db
+      .select()
+      .from(templates)
+      .where(eq(templates.workspaceId, workspaceId))
+      .orderBy(desc(templates.createdAt))
+      .all();
+  }
+  getTemplate(id: number) {
+    return db.select().from(templates).where(eq(templates.id, id)).get();
+  }
+  createTemplate(t: InsertTemplate) {
+    return db
+      .insert(templates)
+      .values({ ...t, createdAt: Date.now() })
+      .returning()
+      .get();
+  }
+  updateTemplate(id: number, t: Partial<InsertTemplate>) {
+    return db.update(templates).set(t).where(eq(templates.id, id)).returning().get();
+  }
+  deleteTemplate(id: number) {
+    db.delete(templates).where(eq(templates.id, id)).run();
   }
 }
 

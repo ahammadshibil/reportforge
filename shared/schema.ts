@@ -27,6 +27,20 @@ export const sources = sqliteTable("sources", {
   createdAt: integer("created_at").notNull(),
 });
 
+// Templates — extracted from a sample document (image / PDF page) by LLM
+// vision; reusable as branded fillable forms. Powers invoices, branded
+// reports, newsletter mastheads, certificates — anything repetitive.
+export const templates = sqliteTable("templates", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: integer("workspace_id").notNull(),
+  name: text("name").notNull(),
+  kind: text("kind").notNull().default("other"), // 'invoice' | 'report' | 'newsletter' | 'other'
+  schema: text("schema").notNull(), // JSON: { fields[], lineItemColumns?, brand{}, layoutHints[] }
+  previewImage: text("preview_image"), // data: URL or stored path of source image
+  brandColor: text("brand_color"),
+  createdAt: integer("created_at").notNull(),
+});
+
 // Connections — OAuth tokens / API keys for external data sources
 export const connections = sqliteTable("connections", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -83,6 +97,10 @@ export const insertConnectionSchema = createInsertSchema(connections).omit({
   id: true,
   createdAt: true,
 });
+export const insertTemplateSchema = createInsertSchema(templates).omit({
+  id: true,
+  createdAt: true,
+});
 export const insertAssetSchema = createInsertSchema(assets).omit({
   id: true,
   createdAt: true,
@@ -99,6 +117,8 @@ export type Source = typeof sources.$inferSelect;
 export type InsertSource = z.infer<typeof insertSourceSchema>;
 export type Connection = typeof connections.$inferSelect;
 export type InsertConnection = z.infer<typeof insertConnectionSchema>;
+export type Template = typeof templates.$inferSelect;
+export type InsertTemplate = z.infer<typeof insertTemplateSchema>;
 export type Asset = typeof assets.$inferSelect;
 export type InsertAsset = z.infer<typeof insertAssetSchema>;
 export type Schedule = typeof schedules.$inferSelect;

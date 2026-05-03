@@ -316,6 +316,89 @@ export async function registerRoutes(
     res.json({ configured: emailConfigured() });
   });
 
+  // ----- Templates -----
+  app.get("/api/workspaces/:id/templates", guard, (req, res) => {
+    res.json(storage.listTemplates(Number(req.params.id)));
+  });
+
+  app.get("/api/templates/:id", guard, (req, res) => {
+    const t = storage.getTemplate(Number(req.params.id));
+    if (!t) return res.status(404).json({ error: "not_found" });
+    res.json(t);
+  });
+
+  app.delete("/api/templates/:id", guard, (req, res) => {
+    storage.deleteTemplate(Number(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // Extract a template from one or more sample images.
+  // body: { workspaceId, images: [{ contentBase64, mimeType }], name?: string }
+  app.post("/api/templates/extract", guard, async (req, res) => {
+    const workspaceId = Number(req.body?.workspaceId);
+    const images = Array.isArray(req.body?.images) ? req.body.images : [];
+    if (!workspaceId || images.length === 0) {
+      return res.status(400).json({ error: "workspaceId and images[] required" });
+    }
+    try {
+      const { extractTemplate } = await import("./templates");
+      const schema = await extractTemplate(
+        images.map((i: any) => ({
+          base64: String(i.contentBase64 || ""),
+          mimeType: String(i.mimeType || "image/png"),
+        }))
+      );
+      const name = String(req.body?.name || schema.name || "Untitled template");
+      const previewImage = images[0]
+        ? `data:${images[0].mimeType};base64,${String(images[0].contentBase64).slice(0, 200000)}`
+        : null;
+      const t = storage.createTemplate({
+        workspaceId,
+        name,
+        kind: schema.kind,
+        schema: JSON.stringify(schema),
+        previewImage,
+        brandColor: schema.brand?.primaryColor ?? null,
+      });
+      res.json(t);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "extract_failed" });
+    }
+  });
+
+  // Render a template with values + optional line items.
+  // body: { values: {}, lineItems: [{}] }  → returns HTML; also persists an asset.
+  app.post("/api/templates/:id/render", guard, async (req, res) => {
+    const t = storage.getTemplate(Number(req.params.id));
+    if (!t) return res.status(404).json({ error: "not_found" });
+    try {
+      const { renderTemplateHtml } = await import("./templates");
+      const schema = JSON.parse(t.schema);
+      const values = (req.body?.values && typeof req.body.values === "object") ? req.body.values : {};
+      const lineItems = Array.isArray(req.body?.lineItems) ? req.body.lineItems : [];
+      const html = renderTemplateHtml(schema, values, lineItems);
+      const headlineKey =
+        ["invoice_number", "report_number", "title", "headline"].find((k) => values[k]) || null;
+      const assetTitle = headlineKey
+        ? `${schema.name} — ${values[headlineKey]}`
+        : `${schema.name} — ${new Date().toLocaleDateString()}`;
+      const asset = storage.createAsset({
+        workspaceId: t.workspaceId,
+        title: assetTitle,
+        kind: "newsletter", // HTML output reuses the newsletter file path
+        prompt: `Rendered from template ${t.id}`,
+        status: "ready",
+        sourceIds: null,
+        outline: JSON.stringify({ templateId: t.id, values, lineItems }),
+        filePath: null,
+        contentHtml: html,
+      });
+      res.json({ html, assetId: asset.id });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "render_failed" });
+    }
+  });
+
   // ----- Connectors -----
   registerConnectorRoutes(app, guard);
 

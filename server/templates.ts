@@ -1,9 +1,10 @@
-// Template extraction + rendering.
+// Template extraction + rendering + auto-fill from sources.
 // Generalizes the invoice-template flow: upload an image of any branded
-// document → LLM vision returns a structured schema → user fills form →
-// render branded HTML/PDF that matches the original.
+// document → LLM vision returns a structured schema → user fills (or
+// fills from sources via LLM) → render branded HTML/PDF that matches.
 
 import { callVisionJson, type VisionImage } from "./llm";
+import type { Source } from "@shared/schema";
 
 export type FieldType =
   | "text"
@@ -120,6 +121,127 @@ function parseExtractionJson(raw: string): TemplateSchema {
       : undefined,
     layoutHints: Array.isArray(j.layoutHints) ? j.layoutHints.map(String) : [],
   };
+}
+
+// ----- Fill from sources -----
+//
+// The killer combo: feed the schema + the workspace's sources to the LLM,
+// get back a JSON object that the form can hydrate from. The LLM never
+// sees the rendered document — it only sees the field schema, so there's
+// no opportunity for it to invent layout or styling. Outputs are the
+// strict shape `{ values, lineItems }` so the existing render path and
+// any user tweaks just keep working.
+
+const FILL_PROMPT_HEADER = `You are filling a structured document template from source material. You will be given:
+1. A field schema (a list of fields with keys, labels, types).
+2. Optionally: line-item table columns.
+3. One or more source documents (text).
+4. Optionally: a user brief steering tone or focus.
+
+Return ONLY valid JSON with this exact shape — no prose, no markdown fences:
+{
+  "values": { "<field_key>": "<string value>", ... },
+  "lineItems": [ { "<col_key>": "<string value>", ... }, ... ]
+}
+
+Rules:
+- Use only information from the sources / brief. Do not invent figures, names, or dates.
+- Omit fields you cannot fill confidently (do not write "N/A" or "TBD").
+- Match the field type: dates as YYYY-MM-DD, currency as plain numbers ("12500" not "$12,500.00").
+- For line items: produce one row per discrete entry inferable from sources. If no clear list exists, return [].
+- Keep values terse — they will be rendered verbatim into a branded form.`;
+
+function buildSchemaSummary(schema: TemplateSchema): string {
+  const fieldsText = schema.fields
+    .map(
+      (f) =>
+        `- ${f.key} (${f.type}${f.required ? ", required" : ""}${
+          f.group ? `, group: ${f.group}` : ""
+        }) — ${f.label}${f.placeholder ? ` [example: ${f.placeholder}]` : ""}`
+    )
+    .join("\n");
+  const cols = schema.lineItemColumns || [];
+  const colsText = cols.length
+    ? "\n\nLine-item columns:\n" +
+      cols.map((c) => `- ${c.key} (${c.type}) — ${c.label}`).join("\n")
+    : "";
+  return `Template: ${schema.name} (kind: ${schema.kind})\n\nFields:\n${fieldsText}${colsText}`;
+}
+
+function buildSourcesBlock(sources: Source[]): string {
+  if (sources.length === 0) return "(no sources provided — fill from brief alone)";
+  return sources
+    .map(
+      (s, i) =>
+        `--- SOURCE ${i + 1}: ${s.title} (type: ${s.type}) ---\n${s.content.slice(0, 10_000)}`
+    )
+    .join("\n\n");
+}
+
+export type FillResult = {
+  values: Record<string, string>;
+  lineItems: Array<Record<string, string>>;
+};
+
+export async function fillFromSources(args: {
+  schema: TemplateSchema;
+  sources: Source[];
+  brief?: string;
+}): Promise<FillResult> {
+  const raw = await callJsonText({
+    system: FILL_PROMPT_HEADER,
+    user: `${buildSchemaSummary(args.schema)}\n\nUser brief:\n${
+      args.brief?.trim() || "(none — infer best fit from sources)"
+    }\n\nSources:\n${buildSourcesBlock(args.sources)}`,
+  });
+  return parseFillJson(raw, args.schema);
+}
+
+async function callJsonText(args: { system: string; user: string }): Promise<string> {
+  const { callTextJson } = await import("./llm");
+  return callTextJson(args.system, args.user);
+}
+
+function parseFillJson(raw: string, schema: TemplateSchema): FillResult {
+  let text = raw.trim();
+  if (text.startsWith("```")) {
+    text = text.replace(/^```(?:json)?\n?/, "").replace(/```\s*$/, "").trim();
+  }
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
+  if (first > 0) text = text.slice(first, last + 1);
+  let parsed: any = {};
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = { values: {}, lineItems: [] };
+  }
+  const validKeys = new Set(schema.fields.map((f) => f.key));
+  const colKeys = new Set((schema.lineItemColumns || []).map((c) => c.key));
+
+  const values: Record<string, string> = {};
+  if (parsed.values && typeof parsed.values === "object") {
+    for (const [k, v] of Object.entries(parsed.values)) {
+      if (!validKeys.has(k)) continue;
+      if (v == null) continue;
+      values[k] = String(v);
+    }
+  }
+
+  const lineItems: Array<Record<string, string>> = [];
+  if (Array.isArray(parsed.lineItems)) {
+    for (const row of parsed.lineItems) {
+      if (!row || typeof row !== "object") continue;
+      const cleaned: Record<string, string> = {};
+      for (const [k, v] of Object.entries(row)) {
+        if (!colKeys.has(k)) continue;
+        if (v == null) continue;
+        cleaned[k] = String(v);
+      }
+      if (Object.keys(cleaned).length) lineItems.push(cleaned);
+    }
+  }
+  return { values, lineItems };
 }
 
 // ----- Render -----

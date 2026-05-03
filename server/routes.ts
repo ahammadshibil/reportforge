@@ -366,6 +366,29 @@ export async function registerRoutes(
     }
   });
 
+  // Auto-fill template fields from selected sources.
+  // body: { sourceIds: number[], brief?: string }
+  // returns: { values: {...}, lineItems: [...] }  — caller hydrates the form.
+  app.post("/api/templates/:id/fill", guard, async (req, res) => {
+    const t = storage.getTemplate(Number(req.params.id));
+    if (!t) return res.status(404).json({ error: "not_found" });
+    const sourceIds: number[] = Array.isArray(req.body?.sourceIds) ? req.body.sourceIds : [];
+    const brief: string | undefined =
+      typeof req.body?.brief === "string" ? req.body.brief : undefined;
+    const allSources = storage.listSources(t.workspaceId);
+    const sources = sourceIds.length
+      ? allSources.filter((s) => sourceIds.includes(s.id))
+      : allSources;
+    try {
+      const { fillFromSources } = await import("./templates");
+      const schema = JSON.parse(t.schema);
+      const out = await fillFromSources({ schema, sources, brief });
+      res.json(out);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "fill_failed" });
+    }
+  });
+
   // Render a template with values + optional line items.
   // body: { values: {}, lineItems: [{}] }  → returns HTML; also persists an asset.
   app.post("/api/templates/:id/render", guard, async (req, res) => {

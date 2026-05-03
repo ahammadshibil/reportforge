@@ -2,13 +2,24 @@ import { useEffect, useMemo, useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, apiUrl } from "@/lib/queryClient";
+import { useWorkspace } from "@/lib/workspaceContext";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, Plus, Trash2, FileDown, Sparkles } from "lucide-react";
+import { ChevronLeft, Plus, Trash2, FileDown, Sparkles, Wand2 } from "lucide-react";
+import type { Source } from "@shared/schema";
 
 type Field = {
   key: string;
@@ -37,6 +48,10 @@ export default function TemplateBuild() {
   const [, params] = useRoute("/templates/:id");
   const id = params?.id ? Number(params.id) : NaN;
   const { toast } = useToast();
+  const { current } = useWorkspace();
+  const [fillOpen, setFillOpen] = useState(false);
+  const [pickedSources, setPickedSources] = useState<Set<number>>(new Set());
+  const [brief, setBrief] = useState("");
 
   const { data: template } = useQuery<Template>({
     queryKey: [`/api/templates/${id}`],
@@ -90,6 +105,40 @@ export default function TemplateBuild() {
     onError: (e: any) => toast({ title: "Render failed", description: e?.message }),
   });
 
+  const { data: sources = [] } = useQuery<Source[]>({
+    queryKey: [`/api/workspaces/${current?.id}/sources`],
+    enabled: !!current && fillOpen,
+  });
+
+  const fillMut = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", `/api/templates/${id}/fill`, {
+        sourceIds: Array.from(pickedSources),
+        brief: brief.trim() || undefined,
+      });
+      return r.json();
+    },
+    onSuccess: (r: any) => {
+      const newValues: Record<string, any> = { ...values };
+      if (r?.values && typeof r.values === "object") {
+        for (const [k, v] of Object.entries(r.values)) newValues[k] = v;
+      }
+      setValues(newValues);
+      if (Array.isArray(r?.lineItems) && r.lineItems.length > 0) {
+        setItems(r.lineItems);
+      }
+      const filled = Object.keys(r?.values ?? {}).length;
+      toast({
+        title: "Fields populated",
+        description: `${filled} field${filled === 1 ? "" : "s"} filled${
+          r?.lineItems?.length ? ` · ${r.lineItems.length} line item${r.lineItems.length === 1 ? "" : "s"}` : ""
+        }. Tweak then Generate.`,
+      });
+      setFillOpen(false);
+    },
+    onError: (e: any) => toast({ title: "Fill failed", description: e?.message }),
+  });
+
   if (!template || !schema) {
     return <div className="p-8 text-sm text-muted-foreground">Loading…</div>;
   }
@@ -117,13 +166,94 @@ export default function TemplateBuild() {
 
   return (
     <div className="p-8 max-w-6xl space-y-6">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/templates" className="flex items-center hover:text-foreground">
-          <ChevronLeft className="h-4 w-4 mr-1" />
-          Templates
-        </Link>
-        <span className="opacity-50">/</span>
-        <span>{template.name}</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Link href="/templates" className="flex items-center hover:text-foreground">
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Templates
+          </Link>
+          <span className="opacity-50">/</span>
+          <span>{template.name}</span>
+        </div>
+        <Dialog open={fillOpen} onOpenChange={setFillOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" data-testid="button-fill">
+              <Wand2 className="h-4 w-4 mr-1.5" />
+              Fill from sources
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Auto-fill from sources</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-xs text-muted-foreground">
+                Pick sources — the LLM reads them and fills the form fields it can confidently match. You can tweak everything before generating.
+              </p>
+              <div className="space-y-1.5">
+                <Label htmlFor="fill-brief">Optional brief</Label>
+                <Textarea
+                  id="fill-brief"
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                  placeholder="e.g. focus on Q1 numbers; bill to Acme Corp"
+                  rows={2}
+                  data-testid="input-fill-brief"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Sources ({pickedSources.size} selected)</Label>
+                <div className="max-h-64 overflow-y-auto rounded-md border border-border divide-y divide-border">
+                  {sources.length === 0 && (
+                    <div className="p-3 text-sm text-muted-foreground">
+                      No sources in this workspace yet.
+                    </div>
+                  )}
+                  {sources.map((s) => {
+                    const checked = pickedSources.has(s.id);
+                    return (
+                      <label
+                        key={s.id}
+                        className="flex items-center gap-3 p-2.5 hover-elevate cursor-pointer"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) => {
+                            const next = new Set(pickedSources);
+                            if (v) next.add(s.id);
+                            else next.delete(s.id);
+                            setPickedSources(next);
+                          }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{s.title}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {s.type} · {(s.content || "").length.toLocaleString()} chars
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                {sources.length > 0 && pickedSources.size === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    None selected → all sources will be used.
+                  </p>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setFillOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => fillMut.mutate()}
+                disabled={fillMut.isPending}
+                data-testid="button-fill-go"
+              >
+                {fillMut.isPending ? "Filling…" : "Fill"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">

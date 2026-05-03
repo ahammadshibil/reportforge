@@ -257,6 +257,21 @@ export async function synthesizeWithLLM(args: Args): Promise<Outline> {
   return outline;
 }
 
+// Generic text-only JSON call. Used by features that need structured
+// output without going through the synthesis pipeline (e.g. template
+// auto-fill from sources).
+export async function callTextJson(system: string, user: string): Promise<string> {
+  const sel = pickProvider();
+  if (!sel.apiKey) throw new Error("no_llm_api_key");
+  if (sel.provider === "anthropic") {
+    return callAnthropic(sel.apiKey, sel.model, sel.baseUrl, system, user);
+  }
+  if (sel.provider === "gemini") {
+    return callGemini(sel.apiKey, sel.model, sel.baseUrl, system, user);
+  }
+  return callOpenAI(sel.apiKey, sel.model, sel.baseUrl, system, user);
+}
+
 // Health check for /api/llm/status
 export function llmStatus() {
   const sel = pickProvider();

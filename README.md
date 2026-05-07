@@ -56,7 +56,7 @@ Any platform that runs Docker + can mount a persistent volume:
 
 ### Cheap LLM keys (any one is enough)
 
-ReportForge uses LLMs for synthesis (text → JSON outline) and template extraction (image → JSON schema). Costs per generation, assuming ~10K input + 2K output tokens:
+BYOR uses LLMs for synthesis (text → JSON outline) and template extraction (image → JSON schema). Each can be a **different provider** — set `LLM_*` for text and `VISION_LLM_*` for vision when your text model can't see (e.g. Perplexity Sonar). Costs per generation, assuming ~10K input + 2K output tokens:
 
 | Provider · Model | $/M in | $/M out | Per-gen | Vision | Free tier |
 |---|---|---|---|---|---|

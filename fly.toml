@@ -1,10 +1,10 @@
 # Fly.io deploy config. ~$0-5/mo on shared-cpu-1x.
 # After editing, run:  fly launch --copy-config --no-deploy   # first time
 #                      fly secrets set ADMIN_EMAIL=... ADMIN_PASSWORD=... GEMINI_API_KEY=... SESSION_SECRET=$(openssl rand -hex 32)
-#                      fly volumes create reportforge_data --size 1 --region <yours>
+#                      fly volumes create byor_data --size 1 --region <yours>
 #                      fly deploy
 
-app = "reportforge"            # change to your app name
+app = "byor"            # change to your app name
 primary_region = "bom"         # Mumbai — pick yours: bom/sin/sjc/iad/etc.
 
 [build]
@@ -14,11 +14,12 @@ primary_region = "bom"         # Mumbai — pick yours: bom/sin/sjc/iad/etc.
   NODE_ENV = "production"
   PORT = "5000"
   DATA_DIR = "/data"
-  BRAND_NAME = "ReportForge"
+  BRAND_NAME = "BYOR"
+  BRAND_TAGLINE = "Build Your Own Report"
   BRAND_COLOR = "#0f766e"
 
 [mounts]
-  source = "reportforge_data"
+  source = "byor_data"
   destination = "/data"
 
 [http_service]

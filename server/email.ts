@@ -30,7 +30,7 @@ function envOrNull(key: string): string | null {
 function fromAddress(): string {
   const explicit = envOrNull("EMAIL_FROM");
   if (explicit) return explicit;
-  const brand = envOrNull("BRAND_NAME") || "ReportForge";
+  const brand = envOrNull("BRAND_NAME") || "BYOR";
   const domain = envOrNull("BRAND_DOMAIN") || "example.com";
   return `${brand} <reports@${domain.replace(/^https?:\/\//, "")}>`;
 }

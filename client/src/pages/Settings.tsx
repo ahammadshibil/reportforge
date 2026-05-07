@@ -155,13 +155,22 @@ export default function Settings() {
   );
 }
 
-function LlmCard() {
-  const { data } = useQuery<{
+type LlmStatus = {
+  provider: string;
+  model: string;
+  baseUrl: string | null;
+  configured: boolean;
+  vision?: {
     provider: string;
     model: string;
     baseUrl: string | null;
+    distinctFromText: boolean;
     configured: boolean;
-  }>({
+  };
+};
+
+function LlmCard() {
+  const { data } = useQuery<LlmStatus>({
     queryKey: ["/api/llm/status"],
   });
   const status = data;
@@ -198,6 +207,36 @@ function LlmCard() {
       {status?.baseUrl && (
         <p className="text-xs text-muted-foreground mt-1">
           Base URL: <code>{status.baseUrl}</code>
+        </p>
+      )}
+      {status?.vision?.distinctFromText && (
+        <div className="mt-4 pt-4 border-t border-border">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
+            Vision (template extraction)
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className={`h-2 w-2 rounded-full ${
+                status.vision.configured ? "bg-emerald-500" : "bg-zinc-400"
+              }`}
+            />
+            <div className="text-sm font-medium">
+              {status.vision.provider} · {status.vision.model}
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Separate provider for image → schema extraction. Use this when your text
+            model can't see (Perplexity Sonar, Groq llama, etc.). Override with{" "}
+            <code>VISION_LLM_PROVIDER</code> / <code>VISION_LLM_API_KEY</code> /{" "}
+            <code>VISION_LLM_MODEL</code>.
+          </p>
+        </div>
+      )}
+      {!status?.vision?.distinctFromText && status?.configured && (
+        <p className="text-xs text-muted-foreground mt-2">
+          Vision uses the same provider for template extraction. If your text model can't
+          see (Perplexity / Groq / DeepSeek), set <code>VISION_LLM_*</code> with a
+          vision-capable key (Gemini / OpenAI / Claude).
         </p>
       )}
     </Card>

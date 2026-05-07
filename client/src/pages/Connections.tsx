@@ -125,7 +125,7 @@ export default function Connections() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Connections</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Connect external sources. ReportForge pulls content into <strong>{current.name}</strong>.
+            Connect external sources. BYOR pulls content into <strong>{current.name}</strong>.
           </p>
         </div>
       </div>

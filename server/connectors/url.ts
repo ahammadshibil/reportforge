@@ -69,7 +69,7 @@ export const urlConnector: Connector = {
     const res = await fetch(url, {
       headers: {
         "User-Agent":
-          "ReportForge/1.0 (+https://github.com/ahammadshibil/reportforge)",
+          "BYOR/1.0 (+https://github.com/ahammadshibil/reportforge)",
         Accept: "text/html,application/xhtml+xml",
       },
     });

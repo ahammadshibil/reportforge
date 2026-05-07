@@ -25,43 +25,62 @@ type Args = {
 };
 
 type Provider = "anthropic" | "openai" | "gemini";
+type Selection = { provider: Provider; apiKey: string; model: string; baseUrl?: string };
 
-function pickProvider(): { provider: Provider; apiKey: string; model: string; baseUrl?: string } {
-  const envProvider = (process.env.LLM_PROVIDER || "").trim().toLowerCase();
-  const explicitKey = (process.env.LLM_API_KEY || "").trim();
-  const explicitModel = (process.env.LLM_MODEL || "").trim();
-  const explicitBaseUrl = (process.env.LLM_BASE_URL || "").trim() || undefined;
+// `prefix` is "" for the main text LLM and "VISION_" for vision calls.
+// This lets a deploy use a cheap text-only provider (Perplexity, Groq, etc.)
+// for synthesis + a separate vision-capable key for template extraction.
+function pickProviderWithPrefix(prefix: ""): Selection;
+function pickProviderWithPrefix(prefix: "VISION_"): Selection | null;
+function pickProviderWithPrefix(prefix: "" | "VISION_"): Selection | null {
+  const envProvider = (process.env[`${prefix}LLM_PROVIDER`] || "").trim().toLowerCase();
+  const explicitKey = (process.env[`${prefix}LLM_API_KEY`] || "").trim();
+  const explicitModel = (process.env[`${prefix}LLM_MODEL`] || "").trim();
+  const explicitBaseUrl = (process.env[`${prefix}LLM_BASE_URL`] || "").trim() || undefined;
 
-  function model(def: string) {
-    return explicitModel || def;
-  }
+  // For VISION_* with no overrides at all, return null so caller can fall
+  // through to the main provider (don't accidentally use a text-only key).
+  if (prefix === "VISION_" && !envProvider && !explicitKey) return null;
+
+  const m = (def: string) => explicitModel || def;
 
   if (envProvider === "anthropic" || (!envProvider && process.env.ANTHROPIC_API_KEY)) {
-    const apiKey = explicitKey || process.env.ANTHROPIC_API_KEY || "";
     return {
       provider: "anthropic",
-      apiKey,
-      model: model(process.env.ANTHROPIC_MODEL || "claude-opus-4-7"),
+      apiKey: explicitKey || process.env.ANTHROPIC_API_KEY || "",
+      model: m(process.env.ANTHROPIC_MODEL || "claude-opus-4-7"),
       baseUrl: explicitBaseUrl,
     };
   }
-  if (envProvider === "gemini" || (!envProvider && (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY))) {
-    const apiKey = explicitKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+  if (
+    envProvider === "gemini" ||
+    (!envProvider && (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY))
+  ) {
     return {
       provider: "gemini",
-      apiKey,
-      model: model("gemini-2.0-flash"),
+      apiKey: explicitKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "",
+      model: m("gemini-2.0-flash"),
       baseUrl: explicitBaseUrl,
     };
   }
-  // default: openai (covers OpenAI proper + any OpenAI-compatible via LLM_BASE_URL)
-  const apiKey = explicitKey || process.env.OPENAI_API_KEY || "";
+  // default: openai or any OpenAI-compatible (Perplexity, Groq, OpenRouter, …)
   return {
     provider: "openai",
-    apiKey,
-    model: model("gpt-4o-mini"),
+    apiKey: explicitKey || process.env.OPENAI_API_KEY || "",
+    model: m("gpt-4o-mini"),
     baseUrl: explicitBaseUrl,
   };
+}
+
+function pickProvider(): Selection {
+  return pickProviderWithPrefix("");
+}
+
+// Vision-only selector. Falls back to the main text provider if no
+// VISION_* envs are set — that's fine for Anthropic/OpenAI/Gemini, but
+// will fail at request time on text-only providers (Perplexity, Groq).
+function pickProviderForVision(): Selection {
+  return pickProviderWithPrefix("VISION_") ?? pickProvider();
 }
 
 // ---- Outline schema (must mirror synthesizer.Outline) ----
@@ -272,14 +291,24 @@ export async function callTextJson(system: string, user: string): Promise<string
   return callOpenAI(sel.apiKey, sel.model, sel.baseUrl, system, user);
 }
 
-// Health check for /api/llm/status
+// Health check for /api/llm/status — surfaces both text + vision provider.
 export function llmStatus() {
-  const sel = pickProvider();
+  const text = pickProvider();
+  const vision = pickProviderForVision();
+  const visionDistinct =
+    !!process.env.VISION_LLM_API_KEY || !!process.env.VISION_LLM_PROVIDER;
   return {
-    provider: sel.provider,
-    model: sel.model,
-    baseUrl: sel.baseUrl ?? null,
-    configured: !!sel.apiKey,
+    provider: text.provider,
+    model: text.model,
+    baseUrl: text.baseUrl ?? null,
+    configured: !!text.apiKey,
+    vision: {
+      provider: vision.provider,
+      model: vision.model,
+      baseUrl: vision.baseUrl ?? null,
+      distinctFromText: visionDistinct,
+      configured: !!vision.apiKey,
+    },
   };
 }
 
@@ -297,7 +326,7 @@ export async function callVisionJson(args: {
   images: VisionImage[];
   modelOverride?: string;
 }): Promise<string> {
-  const sel = pickProvider();
+  const sel = pickProviderForVision();
   if (!sel.apiKey) throw new Error("no_llm_api_key");
   const model = args.modelOverride || sel.model;
 

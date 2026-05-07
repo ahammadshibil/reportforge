@@ -32,14 +32,14 @@ function initialsFrom(name: string): string {
 }
 
 export function getBrand(): Brand {
-  const name = envOr("BRAND_NAME", "ReportForge");
+  const name = envOr("BRAND_NAME", "BYOR");
   const themeRaw = envOr("BRAND_THEME", "auto").toLowerCase();
   const theme: Brand["theme"] =
     themeRaw === "light" || themeRaw === "dark" ? themeRaw : "auto";
 
   return {
     name,
-    tagline: envOr("BRAND_TAGLINE", "Autonomous reporting"),
+    tagline: envOr("BRAND_TAGLINE", "Build Your Own Report"),
     color: envOr("BRAND_COLOR", "#0f766e"),
     logoUrl: envOrNull("BRAND_LOGO_URL"),
     logoText: envOr("BRAND_LOGO_TEXT", initialsFrom(name)),

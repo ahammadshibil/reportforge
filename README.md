@@ -1,6 +1,8 @@
-# ReportForge
+# BYOR — Build Your Own Report
 
-Whitelabel autonomous reporting dashboard. A company drops in their brand, connects their data sources (Google Drive, Notion, Airtable, URLs), and ReportForge generates branded **PDFs**, **PPTX decks**, and **email-safe HTML newsletters** on a schedule — synthesized by Claude.
+> Whitelabel autonomous reporting dashboard for any team, anywhere. Bring your own LLM key, bring your own data sources, brand the deploy in one .env file. Generates **PDFs**, **PPTX decks**, and **email-safe HTML newsletters** from sources or vision-extracted **templates**.
+>
+> Codebase is `reportforge` (the engine); product is BYOR. Both names work.
 
 > **Status.** All five build phases shipped — whitelabel branding, auth, connectors (Google Drive / Notion / Airtable / URLs), multi-provider LLM synthesis, autonomous scheduler, email delivery, direct PDF/CSV/URL ingestion. **Plus**: vision-LLM **Templates** — upload any branded document image, extract a fillable schema, generate matching output. See [Roadmap](#roadmap).
 
@@ -61,6 +63,7 @@ ReportForge uses LLMs for synthesis (text → JSON outline) and template extract
 | **Gemini 2.0 Flash** ⭐ | $0.075 | $0.30 | **~$0.001** | ✅ | 1,500 req/day |
 | Gemini 2.0 Flash-Lite | $0.04 | $0.15 | ~$0.0005 | ✅ | yes |
 | OpenAI gpt-4o-mini | $0.15 | $0.60 | ~$0.002 | ✅ | — |
+| Perplexity Sonar | $1 | $1 + $5 search | ~$0.005 | text-only | — |
 | Anthropic Claude Haiku 4.5 | $1 | $5 | ~$0.012 | ✅ | — |
 | Llama 3.3 70B (Groq) | $0.59 | $0.79 | ~$0.008 | text-only | generous |
 | DeepSeek V3 (OpenRouter) | $0.27 | $1.10 | ~$0.005 | text-only | — |
@@ -69,7 +72,33 @@ ReportForge uses LLMs for synthesis (text → JSON outline) and template extract
 
 **Recommended default:** `GEMINI_API_KEY` (`gemini-2.0-flash`). Free tier alone covers ~50 generations/day, no card on file. Vision works (template extraction works). At paid rates, **1000 generations/month = $1**. Get a key at [aistudio.google.com](https://aistudio.google.com).
 
-For "use any OpenAI-compatible endpoint" — set `LLM_PROVIDER=openai`, `LLM_API_KEY=<key>`, `LLM_BASE_URL=https://api.groq.com/openai/v1` (Groq) or `https://openrouter.ai/api/v1` (OpenRouter), and `LLM_MODEL=<their model id>`.
+For "use any OpenAI-compatible endpoint" — set `LLM_PROVIDER=openai`, `LLM_API_KEY=<key>`, `LLM_BASE_URL=<their endpoint>`, `LLM_MODEL=<their model id>`. Examples:
+
+| Provider | `LLM_BASE_URL` | `LLM_MODEL` |
+|---|---|---|
+| Perplexity | `https://api.perplexity.ai` | `sonar`, `sonar-pro`, `sonar-reasoning` |
+| Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
+| OpenRouter | `https://openrouter.ai/api/v1` | `deepseek/deepseek-chat`, `anthropic/claude-haiku-4-5` |
+| Together | `https://api.together.xyz/v1` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+
+### Vision separation (text-only providers)
+
+If your text LLM doesn't do vision (Perplexity, Groq, most cheap options), set a **separate** `VISION_*` key for template extraction:
+
+```bash
+# Text synthesis on Perplexity (cheap, search-augmented)
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://api.perplexity.ai
+LLM_API_KEY=pplx-...
+LLM_MODEL=sonar
+
+# Vision template extraction on free Gemini
+VISION_LLM_PROVIDER=gemini
+VISION_LLM_API_KEY=AIza...
+VISION_LLM_MODEL=gemini-2.0-flash
+```
+
+If `VISION_*` is unset, vision falls back to the main LLM — fine for Anthropic/OpenAI/Gemini, but template extraction will fail at request time on text-only providers.
 
 ### Local production build
 

@@ -11,6 +11,7 @@ import {
 import { getBrand } from "./brand";
 import { sendEmail, fileToAttachment, emailConfigured } from "./email";
 import { getConnector } from "./connectors/registry";
+import { dispatchDelivery, effectiveTargets, buildBodies, type DeliveryResult } from "./delivery";
 import type { Schedule } from "@shared/schema";
 
 const CADENCE_MS: Record<string, number> = {
@@ -29,6 +30,7 @@ export type RunResult = {
   delivered: boolean;
   deliveryProvider?: string;
   deliveryError?: string;
+  deliveryResults?: DeliveryResult[];
   error?: string;
 };
 
@@ -138,43 +140,48 @@ export async function runSchedule(schedule: Schedule): Promise<RunResult> {
     }
     storage.updateAsset(asset.id, updates);
 
-    // Deliver
-    const recipients = (schedule.recipients || "")
-      .split(/[,;\s]+/)
-      .map((s) => s.trim())
-      .filter((s) => /@/.test(s));
-
-    if (recipients.length === 0 || !emailConfigured()) {
+    // Deliver via the new pluggable target dispatch (email + vault + substack + webhook).
+    // Falls back to legacy `recipients` (email-only) if no targets configured.
+    const targets = effectiveTargets(schedule);
+    if (targets.length === 0) {
       return {
         scheduleId: schedule.id,
         assetId: asset.id,
         delivered: false,
-        deliveryError:
-          recipients.length === 0 ? "no_recipients" : "email_not_configured",
+        deliveryError: "no_delivery_targets",
       };
     }
 
-    const att = attachment ? fileToAttachment(attachment.path, attachment.contentType) : null;
-    const result = await sendEmail({
-      to: recipients,
-      subject: schedule.name,
-      html,
-      attachments: att ? [att] : undefined,
+    const persisted = storage.getAsset(asset.id) ?? asset;
+    const { markdownBody, htmlBody } = buildBodies({
+      outline,
+      htmlBody: html || (persisted.contentHtml ?? ""),
+      asset: persisted,
+      workspaceName: ws.name,
+    });
+    const results = await dispatchDelivery(targets, {
+      title: schedule.name,
+      subtitle: outline.subtitle ?? "",
+      kind: schedule.kind as "newsletter" | "report" | "deck",
+      assetId: asset.id,
+      htmlBody,
+      markdownBody,
+      attachmentPath: attachment?.path,
+      attachmentMime: attachment?.contentType,
+      workspace: ws,
     });
 
-    if (result.ok) {
-      return {
-        scheduleId: schedule.id,
-        assetId: asset.id,
-        delivered: true,
-        deliveryProvider: result.provider,
-      };
-    }
+    const anyOk = results.some((r) => r.ok);
+    const allOk = results.every((r) => r.ok);
     return {
       scheduleId: schedule.id,
       assetId: asset.id,
-      delivered: false,
-      deliveryError: result.reason,
+      delivered: anyOk,
+      deliveryProvider: allOk ? results.map((r) => r.type).join("+") : undefined,
+      deliveryError: anyOk
+        ? undefined
+        : results.map((r) => `${r.type}:${r.reason ?? "?"}`).join(", "),
+      deliveryResults: results,
     };
   } catch (e: any) {
     storage.updateAsset(asset.id, { status: "failed" });

@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   cadence TEXT NOT NULL,
   prompt TEXT NOT NULL,
   recipients TEXT,
+  delivery_targets TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
   last_run_at INTEGER,
   next_run_at INTEGER,
@@ -113,6 +114,7 @@ function tryAlter(sql: string) {
 tryAlter(`ALTER TABLE sources ADD COLUMN connection_id INTEGER`);
 tryAlter(`ALTER TABLE sources ADD COLUMN external_id TEXT`);
 tryAlter(`ALTER TABLE sources ADD COLUMN synced_at INTEGER`);
+tryAlter(`ALTER TABLE schedules ADD COLUMN delivery_targets TEXT`);
 
 export const db = drizzle(sqlite);
 

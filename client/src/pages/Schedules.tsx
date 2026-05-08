@@ -37,6 +37,7 @@ export default function Schedules() {
   const [cadence, setCadence] = useState<"daily" | "weekly" | "monthly">("weekly");
   const [prompt, setPrompt] = useState("");
   const [recipients, setRecipients] = useState("");
+  const [deliveryTargets, setDeliveryTargets] = useState("");
 
   const { data: schedules = [] } = useQuery<Schedule[]>({
     queryKey: ["/api/workspaces", current?.id, "schedules"],
@@ -50,6 +51,15 @@ export default function Schedules() {
 
   const create = useMutation({
     mutationFn: async () => {
+      let targets: any = null;
+      const trimmed = deliveryTargets.trim();
+      if (trimmed) {
+        try {
+          targets = JSON.stringify(JSON.parse(trimmed));
+        } catch (e: any) {
+          throw new Error("Delivery targets must be valid JSON");
+        }
+      }
       const r = await apiRequest("POST", "/api/schedules", {
         workspaceId: current!.id,
         name,
@@ -57,6 +67,7 @@ export default function Schedules() {
         cadence,
         prompt,
         recipients,
+        deliveryTargets: targets,
         enabled: 1,
         lastRunAt: null,
         nextRunAt: Date.now() + (cadence === "daily" ? 86400000 : cadence === "weekly" ? 604800000 : 2592000000),
@@ -164,13 +175,33 @@ export default function Schedules() {
                 <Textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} data-testid="input-sched-prompt" />
               </div>
               <div>
-                <Label>Recipients (comma-separated)</Label>
+                <Label>Recipients (comma-separated emails)</Label>
                 <Input
                   value={recipients}
                   onChange={(e) => setRecipients(e.target.value)}
                   placeholder="team@company.com, lp@company.com"
                   data-testid="input-sched-recipients"
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Quick path for email-only delivery. For vault / Substack / webhook delivery, use Advanced below.
+                </p>
+              </div>
+              <div>
+                <Label>Advanced delivery (JSON, optional)</Label>
+                <Textarea
+                  rows={5}
+                  value={deliveryTargets}
+                  onChange={(e) => setDeliveryTargets(e.target.value)}
+                  data-testid="input-sched-targets"
+                  placeholder={`[
+  {"type": "email", "recipients": "team@company.com"},
+  {"type": "vault", "connectionId": 1, "toolName": "obsidian_create_note", "pathTemplate": "06-Content-Drafts/{date}-{slug}.md"}
+]`}
+                  className="font-mono text-xs"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Override Recipients with a list of typed targets. Supported: <code>email</code>, <code>vault</code>, <code>substack</code>, <code>webhook</code>. Templates: <code>{`{date}`}</code>, <code>{`{slug}`}</code>, <code>{`{title}`}</code>, <code>{`{kind}`}</code>.
+                </p>
               </div>
             </div>
             <DialogFooter>

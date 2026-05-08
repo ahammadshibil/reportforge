@@ -77,7 +77,12 @@ export const schedules = sqliteTable("schedules", {
   kind: text("kind").notNull(), // 'newsletter' | 'report' | 'deck'
   cadence: text("cadence").notNull(), // 'daily' | 'weekly' | 'monthly'
   prompt: text("prompt").notNull(),
-  recipients: text("recipients"), // comma-separated emails
+  recipients: text("recipients"), // legacy: comma-separated emails (kept for backward compat)
+  // JSON array of delivery targets. New shape:
+  //   [{ type: 'email', recipients: 'a@b,c@d' },
+  //    { type: 'vault', connectionId: 5, toolName: 'create_note', pathTemplate: '06-Drafts/{date}-{slug}.md' },
+  //    { type: 'substack', connectionId: 7, action: 'draft' }]
+  deliveryTargets: text("delivery_targets"),
   enabled: integer("enabled").notNull().default(1),
   lastRunAt: integer("last_run_at"),
   nextRunAt: integer("next_run_at"),

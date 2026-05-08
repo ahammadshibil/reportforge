@@ -54,6 +54,17 @@ export async function registerRoutes(
     res.json(llmStatus());
   });
 
+  // ----- Manual cleanup trigger (auth required) -----
+  app.post("/api/admin/cleanup", requireAuth, async (_req, res) => {
+    const { runCleanup } = await import("./cleanup");
+    try {
+      const report = await runCleanup();
+      res.json(report);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "cleanup_failed" });
+    }
+  });
+
   // ----- Auth (public) -----
   app.get("/api/auth/me", (req, res) => {
     res.json({

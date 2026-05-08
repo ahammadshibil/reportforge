@@ -21,6 +21,23 @@ ENV PORT=5000
 # Persistent data lives here — mount a volume in prod.
 ENV DATA_DIR=/data
 
+# Tools the MCP-as-source connector needs to spawn server subprocesses.
+# - ca-certificates: TLS roots for outbound HTTPS (LLMs, MCPs over HTTP/SSE).
+# - curl: pulls the uv installer + healthchecks during deploy.
+# - python3 + uv: required for stdio MCPs that ship as Python packages
+#     (Colab MCP, Datalayer Jupyter MCP). Without uv, `uvx ...` connections
+#     fail at spawn time.
+# - npx is already on the PATH (ships with node:20-slim).
+#
+# Caveat for cloud deploys: browser-driven MCPs (NotebookLM, Substack)
+# still won't work in this container — they need a real Chrome. Run those
+# locally + pair with this image for everything else, OR add Playwright
+# + chromium-browser in a layer if you really need them server-side.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl python3 \
+  && curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Just what the runtime needs: the bundled server, the client build,
@@ -30,8 +47,16 @@ COPY --from=build /app/package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 
-RUN mkdir -p /data && chown -R node:node /data /app
+# /home/node is where npx + uvx cache. Make it writable so MCP subprocess
+# spawns don't fail the first time they need to fetch a package.
+RUN mkdir -p /data /home/node/.cache /home/node/.npm \
+  && chown -R node:node /data /app /home/node
+
 USER node
+
+# Pre-warm the npm cache for common npx-spawned MCPs so the first connect
+# doesn't time out. Best-effort — failures here don't break the build.
+RUN npx -y --no-update-notifier --silent obsidian-mcp-server@latest --help > /dev/null 2>&1 || true
 
 EXPOSE 5000
 

@@ -94,6 +94,11 @@ app.use((req, res, next) => {
     startScheduler();
   }
 
+  if (process.env.CLEANUP_DISABLED !== "1") {
+    const { startCleanup } = await import("./cleanup");
+    startCleanup();
+  }
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

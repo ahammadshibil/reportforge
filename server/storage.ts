@@ -133,6 +133,7 @@ tryAlter(`ALTER TABLE sources ADD COLUMN synced_at INTEGER`);
 tryAlter(`ALTER TABLE schedules ADD COLUMN delivery_targets TEXT`);
 
 export const db = drizzle(sqlite);
+export { sqlite as _sqliteForTests };
 
 export interface IStorage {
   // Workspaces

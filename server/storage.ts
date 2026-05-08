@@ -175,6 +175,7 @@ export interface IStorage {
   deleteTemplate(id: number): void;
   // Asset versions
   listAssetVersions(assetId: number): AssetVersion[];
+  getAssetVersion(versionId: number): AssetVersion | undefined;
   createAssetVersion(v: InsertAssetVersion): AssetVersion;
   countAssetVersions(assetId: number): number;
 }
@@ -349,6 +350,13 @@ class DatabaseStorage implements IStorage {
       .where(eq(assetVersions.assetId, assetId))
       .orderBy(desc(assetVersions.version))
       .all();
+  }
+  getAssetVersion(versionId: number) {
+    return db
+      .select()
+      .from(assetVersions)
+      .where(eq(assetVersions.id, versionId))
+      .get();
   }
   createAssetVersion(v: InsertAssetVersion) {
     return db

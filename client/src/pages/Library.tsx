@@ -208,9 +208,18 @@ type AssetCardProps = {
 };
 
 function AssetCard({ a, meta, Icon, onPreview, onSaveToVault, onRegenerate, onDelete, regenPending }: AssetCardProps) {
-  const { data: versions = [] } = useQuery<Array<{ id: number; version: number; createdAt: number }>>({
+  const { data: versions = [] } = useQuery<Array<{
+    id: number;
+    version: number;
+    status: string;
+    createdAt: number;
+    prompt: string | null;
+    hasHtml: boolean;
+    hasFile: boolean;
+  }>>({
     queryKey: [`/api/assets/${a.id}/versions`],
   });
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const versionCount = versions.length;
   return (
@@ -226,9 +235,14 @@ function AssetCard({ a, meta, Icon, onPreview, onSaveToVault, onRegenerate, onDe
             {versionCount > 0 && (
               <>
                 {" "}·{" "}
-                <span className="inline-flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen(true)}
+                  className="inline-flex items-center gap-0.5 hover:text-foreground underline-offset-2 hover:underline"
+                  data-testid={`button-history-${a.id}`}
+                >
                   <History className="h-3 w-3" /> v{versionCount + 1}
-                </span>
+                </button>
               </>
             )}
           </div>
@@ -285,7 +299,140 @@ function AssetCard({ a, meta, Icon, onPreview, onSaveToVault, onRegenerate, onDe
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
+      <VersionHistoryDialog
+        asset={a}
+        versions={versions}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
     </Card>
+  );
+}
+
+// ---- Version history dialog (preview + restore) ----
+
+type VersionRow = {
+  id: number;
+  version: number;
+  status: string;
+  createdAt: number;
+  prompt: string | null;
+  hasHtml: boolean;
+  hasFile: boolean;
+};
+
+function VersionHistoryDialog({
+  asset,
+  versions,
+  open,
+  onClose,
+}: {
+  asset: Asset;
+  versions: VersionRow[];
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [previewVid, setPreviewVid] = useState<number | null>(null);
+
+  const restore = useMutation({
+    mutationFn: async (vid: number) => {
+      const r = await apiRequest("POST", `/api/assets/${asset.id}/versions/${vid}/restore`);
+      return r.json();
+    },
+    onSuccess: (r: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/assets/${asset.id}/versions`] });
+      toast({
+        title: `Restored v${r?.restoredFromVersion}`,
+        description: "Current state was snapshotted as a new version.",
+      });
+      onClose();
+    },
+    onError: (e: any) => toast({ title: "Restore failed", description: e?.message ?? "" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0">
+        <DialogHeader className="px-5 py-3 border-b shrink-0">
+          <DialogTitle className="text-base flex items-center gap-2">
+            <History className="h-4 w-4" />
+            Version history — {asset.title}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="overflow-y-auto p-3 flex flex-col gap-2">
+          <div className="rounded-md border border-border px-3 py-2.5 bg-primary/5 text-xs">
+            <div className="font-medium flex items-center gap-1.5">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              v{versions.length + 1} · current
+            </div>
+            <div className="text-muted-foreground mt-0.5">
+              {new Date(asset.createdAt).toLocaleString()}
+            </div>
+            {asset.prompt && (
+              <div className="text-muted-foreground mt-1.5 italic line-clamp-2">{asset.prompt}</div>
+            )}
+          </div>
+          {versions.map((v) => (
+            <div
+              key={v.id}
+              className="rounded-md border border-border px-3 py-2.5 text-xs"
+              data-testid={`version-${v.version}`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="font-medium">v{v.version}</div>
+                <div className="text-muted-foreground">
+                  {new Date(v.createdAt).toLocaleString()}
+                </div>
+              </div>
+              {v.prompt && (
+                <div className="text-muted-foreground italic line-clamp-2 mb-2">
+                  {v.prompt}
+                </div>
+              )}
+              <div className="flex items-center gap-1.5">
+                {(v.hasHtml || v.hasFile) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setPreviewVid(v.id)}
+                    data-testid={`preview-version-${v.id}`}
+                  >
+                    <Eye className="h-3.5 w-3.5 mr-1" /> Preview
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => restore.mutate(v.id)}
+                  disabled={restore.isPending}
+                  data-testid={`restore-version-${v.id}`}
+                >
+                  Restore this version
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </DialogContent>
+      {/* Version preview overlay (separate dialog so it nests cleanly) */}
+      <Dialog open={previewVid !== null} onOpenChange={(o) => !o && setPreviewVid(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] p-0 overflow-hidden">
+          <DialogHeader className="px-5 py-3 border-b">
+            <DialogTitle className="text-base">Version preview</DialogTitle>
+          </DialogHeader>
+          {previewVid !== null && (
+            <iframe
+              src={apiUrl(`/api/assets/${asset.id}/versions/${previewVid}/file?inline=1`)}
+              className="w-full"
+              style={{ height: "calc(85vh - 56px)", border: 0 }}
+              title="Version preview"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </Dialog>
   );
 }
 

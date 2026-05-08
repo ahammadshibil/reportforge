@@ -350,9 +350,7 @@ export async function registerRoutes(
   // ----- Asset versions -----
   app.get("/api/assets/:id/versions", guard, (req, res) => {
     const versions = storage.listAssetVersions(Number(req.params.id));
-    // Don't bleed full content_html / outline blobs across the wire — return
-    // metadata + size hints; clients can fetch a specific version's content
-    // via /api/assets/:id/versions/:vid if needed (future).
+    // Metadata-only listing (drop content_html / outline blobs).
     res.json(
       versions.map((v) => ({
         id: v.id,
@@ -364,6 +362,68 @@ export async function registerRoutes(
         hasFile: !!v.filePath,
       }))
     );
+  });
+
+  // Inline-render a single version's content (HTML newsletter or stream
+  // PDF/PPTX file). Used by the version-history dialog's preview.
+  app.get("/api/assets/:id/versions/:vid/file", guard, (req, res) => {
+    const v = storage.getAssetVersion(Number(req.params.vid));
+    if (!v || v.assetId !== Number(req.params.id)) {
+      return res.status(404).json({ error: "version_not_found" });
+    }
+    if (v.contentHtml) {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.send(v.contentHtml);
+    }
+    if (v.filePath && fs.existsSync(v.filePath)) {
+      const filename = path.basename(v.filePath);
+      const inline = req.query.inline === "1";
+      const ct =
+        v.filePath.endsWith(".pdf")
+          ? "application/pdf"
+          : v.filePath.endsWith(".pptx")
+            ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            : "application/octet-stream";
+      res.setHeader("Content-Type", ct);
+      res.setHeader(
+        "Content-Disposition",
+        `${inline ? "inline" : "attachment"}; filename="v${v.version}_${filename}"`
+      );
+      return fs.createReadStream(v.filePath).pipe(res);
+    }
+    res.status(404).json({ error: "version_has_no_content" });
+  });
+
+  // Restore a prior version onto the current asset. Snapshots current
+  // first so nothing is lost.
+  app.post("/api/assets/:id/versions/:vid/restore", guard, (req, res) => {
+    const aid = Number(req.params.id);
+    const a = storage.getAsset(aid);
+    if (!a) return res.status(404).json({ error: "asset_not_found" });
+    const v = storage.getAssetVersion(Number(req.params.vid));
+    if (!v || v.assetId !== aid) {
+      return res.status(404).json({ error: "version_not_found" });
+    }
+    // Snapshot current → new version row
+    const priorCount = storage.countAssetVersions(a.id);
+    storage.createAssetVersion({
+      assetId: a.id,
+      version: priorCount + 1,
+      status: a.status,
+      contentHtml: a.contentHtml ?? null,
+      filePath: a.filePath ?? null,
+      outline: a.outline ?? null,
+      prompt: a.prompt ?? null,
+    });
+    // Restore selected version onto the asset.
+    const updated = storage.updateAsset(a.id, {
+      status: v.status,
+      contentHtml: v.contentHtml ?? null,
+      filePath: v.filePath ?? null,
+      outline: v.outline ?? null,
+      prompt: v.prompt ?? null,
+    });
+    res.json({ asset: updated, restoredFromVersion: v.version });
   });
 
   // POST /api/assets/:id/regenerate

@@ -9,6 +9,7 @@ import {
   Settings,
   Plug,
   LayoutTemplate,
+  ChefHat,
   Moon,
   Sun,
   ChevronDown,
@@ -30,6 +31,7 @@ import { Button } from "@/components/ui/button";
 
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
+  { href: "/recipes", label: "Recipes", icon: ChefHat },
   { href: "/sources", label: "Sources", icon: FileStack },
   { href: "/connections", label: "Connections", icon: Plug },
   { href: "/templates", label: "Templates", icon: LayoutTemplate },

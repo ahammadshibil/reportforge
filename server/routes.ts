@@ -394,6 +394,34 @@ export async function registerRoutes(
     }
   });
 
+  // ----- Recipes (pre-baked workflows) -----
+  app.get("/api/recipes", guard, async (_req, res) => {
+    const { RECIPES } = await import("./recipes");
+    res.json(
+      RECIPES.map((r) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        category: r.category,
+        creates: {
+          workspace: r.workspace.name,
+          template: r.template?.name ?? null,
+          schedule: r.schedule?.name ?? null,
+          sources: r.sampleSources?.length ?? 0,
+        },
+      }))
+    );
+  });
+  app.post("/api/recipes/:id/install", guard, async (req, res) => {
+    try {
+      const { installRecipe } = await import("./recipes");
+      const result = installRecipe(String(req.params.id));
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message ?? "install_failed" });
+    }
+  });
+
   // ----- Templates -----
   app.get("/api/workspaces/:id/templates", guard, (req, res) => {
     res.json(storage.listTemplates(Number(req.params.id)));

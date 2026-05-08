@@ -25,8 +25,14 @@ import {
 } from "lucide-react";
 import type { Connection } from "@shared/schema";
 
+export type EmailRecipient = {
+  email: string;
+  name?: string;
+  firstName?: string;
+};
+
 export type DeliveryTarget =
-  | { type: "email"; recipients: string }
+  | { type: "email"; recipients: string; recipientList?: EmailRecipient[] }
   | { type: "vault"; connectionId: number; toolName: string; pathTemplate?: string; format?: "markdown" | "html" }
   | { type: "substack"; connectionId: number; toolName: string; action?: "draft" | "publish" }
   | { type: "webhook"; url: string; headers?: Record<string, string> };
@@ -145,7 +151,12 @@ export function DeliveryTargetEditor({
 }
 
 function summary(t: DeliveryTarget): string {
-  if (t.type === "email") return t.recipients || "(no recipients)";
+  if (t.type === "email") {
+    if (t.recipientList && t.recipientList.length > 0) {
+      return `${t.recipientList.length} personalized recipient${t.recipientList.length > 1 ? "s" : ""}`;
+    }
+    return t.recipients || "(no recipients)";
+  }
   if (t.type === "vault") return `${t.toolName} → ${t.pathTemplate ?? "06-Content-Drafts/{date}-{slug}.md"}`;
   if (t.type === "substack") return `${t.toolName} (${t.action ?? "draft"})`;
   if (t.type === "webhook") return t.url;
@@ -209,18 +220,10 @@ function TargetForm({
       </div>
 
       {draft.type === "email" && (
-        <div className="space-y-1.5">
-          <Label className="text-xs">Recipients</Label>
-          <Input
-            value={draft.recipients}
-            onChange={(e) => setDraft({ ...draft, recipients: e.target.value })}
-            placeholder="team@company.com, lp@company.com"
-            data-testid="target-email-recipients"
-          />
-          <p className="text-[11px] text-muted-foreground">
-            Comma- or space-separated. Requires <code>RESEND_API_KEY</code> or SMTP env on the server.
-          </p>
-        </div>
+        <EmailFields
+          draft={draft as Extract<DeliveryTarget, { type: "email" }>}
+          onChange={(d) => setDraft(d)}
+        />
       )}
 
       {(draft.type === "vault" || draft.type === "substack") && (
@@ -351,9 +354,119 @@ function TargetForm({
 }
 
 function isValid(t: DeliveryTarget): boolean {
-  if (t.type === "email") return !!t.recipients?.trim();
+  if (t.type === "email") {
+    if (Array.isArray(t.recipientList) && t.recipientList.length > 0) return true;
+    return !!t.recipients?.trim();
+  }
   if (t.type === "vault") return t.connectionId > 0 && !!t.toolName.trim();
   if (t.type === "substack") return t.connectionId > 0 && !!t.toolName.trim();
   if (t.type === "webhook") return /^https?:\/\//i.test(t.url);
   return false;
+}
+
+// Email-specific form. Toggles between simple (comma-separated) and
+// personalized (one recipient per line: 'email,firstName,name').
+type EmailDraft = Extract<DeliveryTarget, { type: "email" }>;
+
+function EmailFields({
+  draft,
+  onChange,
+}: {
+  draft: EmailDraft;
+  onChange: (next: EmailDraft) => void;
+}) {
+  const [mode, setMode] = useState<"simple" | "personalized">(
+    draft.recipientList && draft.recipientList.length > 0 ? "personalized" : "simple"
+  );
+  const [csv, setCsv] = useState<string>(() =>
+    draft.recipientList
+      ? draft.recipientList
+          .map((r) =>
+            [r.email, r.firstName ?? "", r.name ?? ""].filter(Boolean).join(",")
+          )
+          .join("\n")
+      : ""
+  );
+
+  function commitCsv(text: string) {
+    setCsv(text);
+    const list: EmailRecipient[] = text
+      .split(/\r?\n/)
+      .map((raw) => raw.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const parts = line.split(/\s*,\s*/);
+        const [email, firstName, name] = [parts[0] ?? "", parts[1] ?? "", parts[2] ?? ""];
+        return {
+          email: email.trim(),
+          firstName: firstName.trim() || undefined,
+          name: name.trim() || undefined,
+        };
+      })
+      .filter((r) => /@/.test(r.email));
+    onChange({ ...draft, recipientList: list });
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setMode("simple");
+            onChange({ ...draft, recipientList: undefined });
+          }}
+          className={`px-3 py-1.5 rounded-md border text-xs ${
+            mode === "simple" ? "border-primary bg-primary/10" : "border-border"
+          }`}
+        >
+          Simple
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("personalized")}
+          className={`px-3 py-1.5 rounded-md border text-xs ${
+            mode === "personalized" ? "border-primary bg-primary/10" : "border-border"
+          }`}
+        >
+          Personalized
+        </button>
+      </div>
+
+      {mode === "simple" ? (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Recipients</Label>
+          <Input
+            value={draft.recipients}
+            onChange={(e) =>
+              onChange({ ...draft, recipients: e.target.value, recipientList: undefined })
+            }
+            placeholder="team@company.com, lp@company.com"
+            data-testid="target-email-recipients"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Comma-separated. One email goes to all addresses.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Recipients (one per line)</Label>
+          <textarea
+            value={csv}
+            onChange={(e) => commitCsv(e.target.value)}
+            placeholder={`shibil@speciale.invest,Shibil,Shibil Ahammad
+john@example.com,John
+sarah@example.com,Sarah,Dr. Sarah Lin`}
+            rows={5}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono"
+            data-testid="target-email-recipientList"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Format: <code>email,firstName,name</code> — last two optional. Subject + body get{" "}
+            <code>{`{{firstName}}`}</code>, <code>{`{{name}}`}</code>, <code>{`{{email}}`}</code> substitution per recipient.
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }

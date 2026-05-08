@@ -7,9 +7,22 @@ import { storage } from "./storage";
 import { sendEmail, fileToAttachment, emailConfigured } from "./email";
 import type { Outline } from "./synthesizer";
 
+export type EmailRecipient = {
+  email: string;
+  name?: string;
+  firstName?: string;
+  vars?: Record<string, string>;
+};
+
 export type EmailTarget = {
   type: "email";
-  recipients: string; // comma/space/semicolon-separated
+  // Legacy: comma/space/semicolon-separated emails. Used when recipientList
+  // is absent. Sent as a single message to all recipients (no personalization).
+  recipients: string;
+  // Structured list. When present, overrides `recipients` and produces one
+  // personalized message per row. {{firstName}}, {{name}}, {{email}} +
+  // anything in `vars` get substituted into subject + html body.
+  recipientList?: EmailRecipient[];
 };
 
 export type VaultTarget = {
@@ -86,21 +99,82 @@ export function effectiveTargets(schedule: Schedule): DeliveryTarget[] {
 
 // ---- Per-target dispatch ----
 
+// Replace {{firstName}}, {{name}}, {{email}}, and any custom vars.
+// Unknown placeholders are left untouched so an editor can still tell
+// what was a typo vs intentional.
+function substitute(template: string, recipient: EmailRecipient): string {
+  const vars: Record<string, string> = {
+    email: recipient.email,
+    name: recipient.name || recipient.firstName || recipient.email.split("@")[0] || "",
+    firstName:
+      recipient.firstName ||
+      (recipient.name ? recipient.name.split(/\s+/)[0] : "") ||
+      recipient.email.split("@")[0] ||
+      "",
+    ...(recipient.vars || {}),
+  };
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, key) =>
+    Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : m
+  );
+}
+
 async function deliverEmail(
   t: EmailTarget,
   ctx: DeliveryContext
 ): Promise<DeliveryResult> {
-  const recipients = (t.recipients || "")
-    .split(/[,;\s]+/)
-    .map((s) => s.trim())
-    .filter((s) => /@/.test(s));
-  if (recipients.length === 0) return { type: "email", ok: false, reason: "no_recipients" };
   if (!emailConfigured()) return { type: "email", ok: false, reason: "email_not_configured" };
 
   const att =
     ctx.attachmentPath && ctx.attachmentMime
       ? fileToAttachment(ctx.attachmentPath, ctx.attachmentMime)
       : null;
+
+  // Personalized fan-out path: one message per recipient with var substitution.
+  if (Array.isArray(t.recipientList) && t.recipientList.length > 0) {
+    const results: Array<{ email: string; ok: boolean; reason?: string }> = [];
+    let providerSeen: string | undefined;
+    for (const r of t.recipientList) {
+      if (!r?.email || !/@/.test(r.email)) {
+        results.push({ email: r?.email ?? "(blank)", ok: false, reason: "invalid_email" });
+        continue;
+      }
+      const subject = substitute(ctx.title, r);
+      const html = substitute(ctx.htmlBody, r);
+      const out = await sendEmail({
+        to: [r.email],
+        subject,
+        html,
+        attachments: att ? [att] : undefined,
+      });
+      if (out.ok) {
+        providerSeen = out.provider;
+        results.push({ email: r.email, ok: true });
+      } else {
+        results.push({ email: r.email, ok: false, reason: out.reason });
+      }
+    }
+    const sent = results.filter((r) => r.ok).length;
+    const failed = results.length - sent;
+    return {
+      type: "email",
+      ok: sent > 0,
+      reason: failed > 0 ? `${failed}_failed_of_${results.length}` : undefined,
+      detail: {
+        provider: providerSeen,
+        sent,
+        failed,
+        results,
+      },
+    };
+  }
+
+  // Legacy bulk path: one message to all comma-listed emails. No personalization.
+  const recipients = (t.recipients || "")
+    .split(/[,;\s]+/)
+    .map((s) => s.trim())
+    .filter((s) => /@/.test(s));
+  if (recipients.length === 0) return { type: "email", ok: false, reason: "no_recipients" };
+
   const result = await sendEmail({
     to: recipients,
     subject: ctx.title,

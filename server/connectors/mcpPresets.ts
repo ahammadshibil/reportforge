@@ -106,17 +106,27 @@ export const MCP_PRESETS: McpPreset[] = [
     id: "obsidian",
     label: "Obsidian (Local REST API)",
     description:
-      "Read & write your Obsidian vault. Requires the `Local REST API` plugin enabled in Obsidian.",
+      "Read & write your Obsidian vault. Requires the 'Local REST API' community plugin (enable HTTP on port 27123 in plugin settings).",
     status: "community-mature",
     transport: "stdio",
     command: "npx",
-    args: ["-y", "obsidian-mcp-server"],
+    args: ["-y", "obsidian-mcp-server@latest"],
     envFields: [
-      { key: "OBSIDIAN_API_KEY", label: "Local REST API Key", required: true },
+      {
+        key: "OBSIDIAN_API_KEY",
+        label: "Local REST API Key",
+        placeholder: "from the plugin's settings page",
+        required: true,
+      },
       {
         key: "OBSIDIAN_BASE_URL",
         label: "Local REST API URL",
-        placeholder: "https://127.0.0.1:27124",
+        placeholder: "http://127.0.0.1:27123",
+      },
+      {
+        key: "OBSIDIAN_VERIFY_SSL",
+        label: "Verify SSL (set to 'false' if using HTTPS port 27124)",
+        placeholder: "false",
       },
     ],
     homepage: "https://github.com/cyanheads/obsidian-mcp-server",

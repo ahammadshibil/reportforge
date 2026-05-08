@@ -147,18 +147,28 @@ async function deliverSubstack(
   const conn = storage.getConnection(t.connectionId);
   if (!conn || conn.type !== "mcp")
     return { type: "substack", ok: false, reason: "connection_not_mcp" };
+
+  // marcomoauro/substack-mcp's create_draft_post accepts (title, subtitle, body).
+  // Send the HTML body since it preserves citation footnote anchors. Other
+  // Substack-shaped MCPs that use different field names get covered by the
+  // common aliases below — extra keys are ignored by strict tools.
   const args: Record<string, unknown> = {
     title: ctx.title,
     subtitle: ctx.subtitle,
+    body: ctx.htmlBody,
     body_html: ctx.htmlBody,
-    body: ctx.markdownBody,
+    body_markdown: ctx.markdownBody,
     content: ctx.htmlBody,
-    publish: t.action === "publish",
   };
   try {
     const { mcpCallTool } = await import("./connectors/mcp");
     await mcpCallTool(conn, t.toolName, args);
-    return { type: "substack", ok: true, detail: { action: t.action ?? "draft" } };
+    // marcomoauro server is drafts-only; honor that even if action='publish' is set.
+    return {
+      type: "substack",
+      ok: true,
+      detail: { action: "draft", note: t.action === "publish" ? "publish ignored — server creates drafts only" : undefined },
+    };
   } catch (e: any) {
     return { type: "substack", ok: false, reason: e?.message ?? "substack_failed" };
   }

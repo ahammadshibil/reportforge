@@ -144,16 +144,31 @@ export const MCP_PRESETS: McpPreset[] = [
   },
   {
     id: "substack",
-    label: "Substack (browser-driven)",
+    label: "Substack (browser-driven, drafts only)",
     description:
-      "Create & publish Substack posts. ⚠️ Browser automation — Substack has no posting API.",
+      "Create draft Substack posts via marcomoauro/substack-mcp. ⚠️ Browser-session auth — get the cookies from your logged-in browser. Drafts only; you publish manually in Substack.",
     status: "community-fragile",
     transport: "stdio",
     command: "npx",
     args: ["-y", "substack-mcp"],
     envFields: [
-      { key: "SUBSTACK_EMAIL", label: "Substack email", required: true },
-      { key: "SUBSTACK_PASSWORD", label: "Substack password", required: true },
+      {
+        key: "SUBSTACK_PUBLICATION_URL",
+        label: "Publication URL",
+        placeholder: "https://yourname.substack.com",
+        required: true,
+      },
+      {
+        key: "SUBSTACK_SESSION_TOKEN",
+        label: "Session Token (cookie 'substack.sid')",
+        placeholder: "from logged-in browser DevTools → Application → Cookies",
+        required: true,
+      },
+      {
+        key: "SUBSTACK_USER_ID",
+        label: "User ID (from your Substack profile)",
+        required: true,
+      },
     ],
     homepage: "https://github.com/marcomoauro/substack-mcp",
   },

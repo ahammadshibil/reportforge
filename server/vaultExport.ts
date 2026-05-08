@@ -61,8 +61,18 @@ export function outlineToMarkdown(
     }
   }
 
+  // Build a refs lookup so headings can append [^N] markers + the bottom of
+  // the doc carries footnote-style source list. Obsidian renders [^N]
+  // natively as native footnotes, AND we attach wikilinks where possible.
+  const sourceMap = new Map<number, { id: number; title: string; type: string }>();
+  for (const src of outline.sources ?? []) {
+    sourceMap.set(src.ref, { id: src.id, title: src.title, type: src.type });
+  }
+  const refMark = (refs?: number[]) =>
+    refs && refs.length ? " " + refs.map((r) => `[^${r}]`).join("") : "";
+
   for (const s of outline.sections) {
-    parts.push(`\n## ${s.heading}`);
+    parts.push(`\n## ${s.heading}${refMark(s.sourceRefs)}`);
     if (s.paragraph?.trim()) parts.push(s.paragraph);
     if (s.bullets?.length) {
       parts.push("");
@@ -73,6 +83,17 @@ export function outlineToMarkdown(
   if (outline.callouts?.length) {
     parts.push(`\n## Callouts`);
     for (const c of outline.callouts) parts.push(`> ${c}`);
+  }
+
+  if (sourceMap.size) {
+    parts.push(`\n## Sources`);
+    const refs = Array.from(sourceMap.keys()).sort((a, b) => a - b);
+    for (const ref of refs) {
+      const src = sourceMap.get(ref)!;
+      // Wikilink to a vault note named the same as the source title — Obsidian
+      // resolves to existing notes if present, otherwise creates a stub on click.
+      parts.push(`[^${ref}]: [[${src.title}]] · ${src.type}`);
+    }
   }
 
   return parts.join("\n") + "\n";

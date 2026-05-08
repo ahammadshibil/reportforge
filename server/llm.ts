@@ -89,7 +89,12 @@ const OUTLINE_SCHEMA = `{
   "subtitle": "string (1 short sentence, dated if relevant)",
   "executiveSummary": "string (3–5 sentences)",
   "sections": [
-    { "heading": "string", "paragraph": "string", "bullets": ["string", "..."] }
+    {
+      "heading": "string",
+      "paragraph": "string",
+      "bullets": ["string", "..."],
+      "sourceRefs": [1, 3]
+    }
   ],
   "metrics": [
     { "label": "string", "value": "string", "delta": "string (optional)" }
@@ -108,7 +113,8 @@ Rules:
 - Each section: 1-paragraph paragraph (40-90 words) + 3-5 bullets.
 - metrics: surface real numbers from sources ($, %, counts) when present; otherwise return [].
 - callouts: 1-3 short quotable sentences from sources.
-- subtitle: include today's date in long form when relevant.`;
+- subtitle: include today's date in long form when relevant.
+- CITATIONS: Each section MUST include "sourceRefs" — a list of 1-indexed source numbers (matching the SOURCE N labels in the user message) that the section's content draws from. Use the smallest set that justifies the claims; omit refs only if the section is brief framing copy with no factual claims. Do not invent refs — only use numbers that appear in the provided sources.`;
 }
 
 function buildUserPrompt(args: Args) {
@@ -232,6 +238,11 @@ function parseOutline(raw: string): Outline {
           heading: String(s?.heading || ""),
           paragraph: String(s?.paragraph || ""),
           bullets: Array.isArray(s?.bullets) ? s.bullets.map((b: any) => String(b)) : [],
+          sourceRefs: Array.isArray(s?.sourceRefs)
+            ? s.sourceRefs
+                .map((n: any) => Number(n))
+                .filter((n: number) => Number.isFinite(n) && n >= 1)
+            : undefined,
         }))
       : [],
     metrics: Array.isArray(parsed.metrics)
@@ -268,6 +279,22 @@ export async function synthesizeWithLLM(args: Args): Promise<Outline> {
     const tone = args.tone[0].toUpperCase() + args.tone.slice(1);
     outline.subtitle = `${tone} synthesis · ${new Date().toDateString()}`;
   }
+  // Drop any sourceRefs the model invented that don't map to a real source.
+  // Then attach the source map so generators can render footnotes.
+  const validRefs = new Set(args.sources.map((_, i) => i + 1));
+  for (const s of outline.sections) {
+    if (s.sourceRefs) {
+      s.sourceRefs = s.sourceRefs.filter((r) => validRefs.has(r));
+      if (s.sourceRefs.length === 0) s.sourceRefs = undefined;
+    }
+  }
+  outline.sources = args.sources.map((s, i) => ({
+    ref: i + 1,
+    id: s.id,
+    title: s.title,
+    type: s.type,
+  }));
+
   if (outline.sections.length === 0) {
     outline.sections = [
       { heading: "Brief", paragraph: args.prompt, bullets: [] },

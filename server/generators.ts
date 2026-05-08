@@ -94,6 +94,11 @@ export async function generatePdfReport(args: {
         lineGap: 3,
       });
 
+    // Pre-compute footnote markers so PDF/PPTX/HTML render consistently.
+    const refsLabel = (refs?: number[]) =>
+      refs && refs.length ? ` [${refs.join(",")}]` : "";
+    void refsLabel; // referenced in heading text below
+
     // -------- Body sections --------
     outline.sections.forEach((s) => {
       doc.addPage();
@@ -103,7 +108,7 @@ export async function generatePdfReport(args: {
         .fillColor(ink)
         .fontSize(20)
         .font("Helvetica-Bold")
-        .text(s.heading, 72, 58, { width: doc.page.width - 128 });
+        .text(s.heading + refsLabel(s.sourceRefs), 72, 58, { width: doc.page.width - 128 });
 
       let y = 110;
       doc.fillColor(ink).fontSize(11).font("Helvetica").text(s.paragraph, 56, y, {
@@ -130,6 +135,35 @@ export async function generatePdfReport(args: {
         });
       }
     });
+
+    // Sources / citations page
+    if (outline.sources && outline.sources.length) {
+      doc.addPage();
+      doc
+        .fillColor(ink)
+        .fontSize(20)
+        .font("Helvetica-Bold")
+        .text("Sources", 56, 60);
+      let y = 110;
+      outline.sources.forEach((src) => {
+        doc
+          .fillColor(accent)
+          .fontSize(11)
+          .font("Helvetica-Bold")
+          .text(`[${src.ref}]`, 56, y);
+        doc
+          .fillColor(ink)
+          .fontSize(11)
+          .font("Helvetica")
+          .text(src.title, 90, y, { width: doc.page.width - 146 });
+        doc
+          .fillColor(muted)
+          .fontSize(9)
+          .font("Helvetica")
+          .text(`type: ${src.type}`, 90, doc.y + 2, { width: doc.page.width - 146 });
+        y = doc.y + 14;
+      });
+    }
 
     // Callouts page
     if (outline.callouts.length) {
@@ -292,7 +326,9 @@ export async function generatePptxDeck(args: {
       color: muted,
       charSpacing: 3,
     });
-    sl.addText(sec.heading, {
+    const refMark =
+      sec.sourceRefs && sec.sourceRefs.length ? `  [${sec.sourceRefs.join(",")}]` : "";
+    sl.addText(sec.heading + refMark, {
       x: 0.6,
       y: 0.75,
       w: 12,
@@ -328,6 +364,36 @@ export async function generatePptxDeck(args: {
       );
     }
   });
+
+  // Sources slide (if cited)
+  if (outline.sources && outline.sources.length) {
+    const ssrc = pptx.addSlide();
+    ssrc.addText("Sources", {
+      x: 0.6,
+      y: 0.5,
+      w: 12,
+      h: 0.6,
+      fontSize: 28,
+      bold: true,
+      color: ink,
+    });
+    ssrc.addShape("rect", { x: 0.6, y: 1.2, w: 0.6, h: 0.05, fill: { color: accent } });
+    ssrc.addText(
+      outline.sources.map((s) => ({
+        text: `[${s.ref}] ${s.title}  ·  ${s.type}`,
+        options: { breakLine: true },
+      })),
+      {
+        x: 0.6,
+        y: 1.6,
+        w: 12,
+        h: 5,
+        fontSize: 13,
+        color: ink,
+        paraSpaceAfter: 6,
+      }
+    );
+  }
 
   // Closing
   const sc = pptx.addSlide();
@@ -366,12 +432,18 @@ export function generateNewsletterHtml(args: {
   const accent = brandColor || "#0f766e";
   const safe = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const refsSup = (refs?: number[]) =>
+    refs && refs.length
+      ? ` <sup style="font:600 11px/1 Helvetica,Arial,sans-serif;color:${accent};">${refs
+          .map((r) => `<a href="#src-${r}" style="color:${accent};text-decoration:none;">[${r}]</a>`)
+          .join(",")}</sup>`
+      : "";
   const sectionsHtml = outline.sections
     .map(
       (s) => `
       <tr><td style="padding:28px 32px 8px 32px;">
         <div style="font:600 11px/1 Helvetica,Arial,sans-serif;letter-spacing:1.5px;color:${accent};text-transform:uppercase;margin-bottom:8px;">Section</div>
-        <h2 style="font:700 22px/1.25 Helvetica,Arial,sans-serif;margin:0 0 12px 0;color:#0a0a0a;">${safe(s.heading)}</h2>
+        <h2 style="font:700 22px/1.25 Helvetica,Arial,sans-serif;margin:0 0 12px 0;color:#0a0a0a;">${safe(s.heading)}${refsSup(s.sourceRefs)}</h2>
         <p style="font:400 15px/1.6 Helvetica,Arial,sans-serif;color:#27313e;margin:0 0 12px 0;">${safe(s.paragraph)}</p>
         <ul style="margin:0;padding-left:18px;color:#27313e;font:400 14px/1.55 Helvetica,Arial,sans-serif;">
           ${s.bullets.map((b) => `<li style="margin:6px 0;">${safe(b)}</li>`).join("")}
@@ -381,6 +453,22 @@ export function generateNewsletterHtml(args: {
     `
     )
     .join("");
+
+  const sourcesHtml =
+    outline.sources && outline.sources.length
+      ? `
+      <tr><td style="padding:24px 32px 0 32px;">
+        <div style="font:600 11px/1 Helvetica,Arial,sans-serif;letter-spacing:1.5px;color:${accent};text-transform:uppercase;margin-bottom:10px;">Sources</div>
+        <ol style="margin:0;padding-left:20px;color:#27313e;font:400 13px/1.55 Helvetica,Arial,sans-serif;">
+          ${outline.sources
+            .map(
+              (s) =>
+                `<li id="src-${s.ref}" style="margin:4px 0;">${safe(s.title)} <span style="color:#525b67;">· ${safe(s.type)}</span></li>`
+            )
+            .join("")}
+        </ol>
+      </td></tr>`
+      : "";
 
   const metricsHtml = outline.metrics
     .map(
@@ -421,6 +509,7 @@ export function generateNewsletterHtml(args: {
       <tr><td style="padding:0 32px;"><hr style="border:none;border-top:1px solid #ececec;margin:16px 0 0 0;"></td></tr>
       ${sectionsHtml}
       ${calloutsHtml}
+      ${sourcesHtml}
       <tr><td style="padding:24px 32px 28px 32px;text-align:center;color:#525b67;font:400 12px/1.4 Helvetica,Arial,sans-serif;">
         Generated by ${safe(process.env.BRAND_NAME || "BYOR")} for ${safe(workspaceName)}.
       </td></tr>

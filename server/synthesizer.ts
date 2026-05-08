@@ -5,7 +5,20 @@
 
 import type { Source } from "@shared/schema";
 
-export type Section = { heading: string; bullets: string[]; paragraph: string };
+export type Section = {
+  heading: string;
+  bullets: string[];
+  paragraph: string;
+  // 1-indexed source numbers used for this section. The Outline.sources
+  // array below maps each ref back to a real Source row (id + title).
+  sourceRefs?: number[];
+};
+export type SourceCitation = {
+  ref: number; // 1-indexed
+  id: number;
+  title: string;
+  type: string;
+};
 export type Outline = {
   title: string;
   subtitle: string;
@@ -13,6 +26,9 @@ export type Outline = {
   sections: Section[];
   metrics: { label: string; value: string; delta?: string }[];
   callouts: string[];
+  // Populated by synthesize() so generators + vault export can render
+  // footnotes / wikilinks. Empty when no sources or extractive path is used.
+  sources?: SourceCitation[];
 };
 
 // --- text utils ---

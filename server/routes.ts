@@ -23,6 +23,7 @@ import { registerConnectorRoutes } from "./connectors/routes";
 import { llmStatus } from "./llm";
 import { runSchedule, nextRunFor } from "./runner";
 import { emailConfigured } from "./email";
+import rateLimit from "express-rate-limit";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -50,7 +51,16 @@ export async function registerRoutes(
       configured: authConfigured(),
     });
   });
-  app.post("/api/auth/login", async (req, res) => {
+  // Rate-limit /api/auth/login: 10 attempts per 5min per IP. Defends against
+  // brute-force / credential stuffing on the single admin login.
+  const loginLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    limit: 10,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: { error: "too_many_login_attempts" },
+  });
+  app.post("/api/auth/login", loginLimiter, async (req, res) => {
     const { email, password } = req.body ?? {};
     if (typeof email !== "string" || typeof password !== "string") {
       return res.status(400).json({ error: "missing_credentials" });

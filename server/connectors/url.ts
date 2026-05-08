@@ -66,7 +66,8 @@ export const urlConnector: Connector = {
 
   async fetch(_connection, externalId): Promise<FetchedContent> {
     const url = externalId;
-    const res = await fetch(url, {
+    const { safeFetch } = await import("../safeFetch");
+    const res = await safeFetch(url, {
       headers: {
         "User-Agent":
           "BYOR/1.0 (+https://github.com/ahammadshibil/reportforge)",

@@ -23,6 +23,7 @@ import type {
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, desc } from "drizzle-orm";
+import { encryptSecret, decryptSecret } from "./secrets";
 
 // DATA_DIR lets prod deploys point at a persistent volume mount.
 const DATA_DIR = process.env.DATA_DIR || ".";
@@ -268,20 +269,29 @@ class DatabaseStorage implements IStorage {
       .from(connections)
       .where(eq(connections.workspaceId, workspaceId))
       .orderBy(desc(connections.createdAt))
-      .all();
+      .all()
+      .map(decryptConnection);
   }
   getConnection(id: number) {
-    return db.select().from(connections).where(eq(connections.id, id)).get();
+    const row = db.select().from(connections).where(eq(connections.id, id)).get();
+    return row ? decryptConnection(row) : row;
   }
   createConnection(c: InsertConnection) {
-    return db
+    const row = db
       .insert(connections)
-      .values({ ...c, createdAt: Date.now() })
+      .values({ ...encryptConnection(c), createdAt: Date.now() })
       .returning()
       .get();
+    return decryptConnection(row);
   }
   updateConnection(id: number, c: Partial<InsertConnection>) {
-    return db.update(connections).set(c).where(eq(connections.id, id)).returning().get();
+    const row = db
+      .update(connections)
+      .set(encryptConnection(c))
+      .where(eq(connections.id, id))
+      .returning()
+      .get();
+    return row ? decryptConnection(row) : row;
   }
   deleteConnection(id: number) {
     db.delete(connections).where(eq(connections.id, id)).run();
@@ -310,6 +320,23 @@ class DatabaseStorage implements IStorage {
   }
   deleteTemplate(id: number) {
     db.delete(templates).where(eq(templates.id, id)).run();
+  }
+}
+
+// Transparent encryption helpers for the connection.config column.
+// Apply on every write, reverse on every read — callers see plaintext.
+function encryptConnection<T extends { config?: string | null | undefined }>(c: T): T {
+  if (!c || typeof c.config !== "string" || c.config.length === 0) return c;
+  return { ...c, config: encryptSecret(c.config) };
+}
+function decryptConnection<T extends { config?: string | null | undefined }>(c: T): T {
+  if (!c || typeof c.config !== "string" || c.config.length === 0) return c;
+  try {
+    return { ...c, config: decryptSecret(c.config) ?? c.config };
+  } catch {
+    // Decrypt failed — likely wrong key or corrupted row. Return as-is so
+    // the rest of the app keeps working; the connection will fail on use.
+    return c;
   }
 }
 

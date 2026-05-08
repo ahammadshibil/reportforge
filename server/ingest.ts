@@ -158,7 +158,8 @@ export async function ingestUpload(args: {
 
 export async function ingestUrl(url: string): Promise<IngestResult> {
   if (!/^https?:\/\//i.test(url)) throw new Error("URL must start with http(s)");
-  const res = await fetch(url, {
+  const { safeFetch } = await import("./safeFetch");
+  const res = await safeFetch(url, {
     headers: {
       "User-Agent": "BYOR/1.0 (+https://github.com/ahammadshibil/reportforge)",
       Accept: "text/html,application/xhtml+xml,application/pdf,*/*;q=0.8",

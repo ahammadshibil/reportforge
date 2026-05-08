@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useWorkspace } from "@/lib/workspaceContext";
 import { Card } from "@/components/ui/card";
@@ -25,8 +25,12 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { CalendarClock, Plus, Trash2, Play } from "lucide-react";
+import { CalendarClock, Plus, Trash2, Play, Pencil } from "lucide-react";
 import type { Schedule } from "@shared/schema";
+import {
+  DeliveryTargetEditor,
+  type DeliveryTarget,
+} from "@/components/DeliveryTargetEditor";
 
 export default function Schedules() {
   const { current } = useWorkspace();
@@ -37,7 +41,8 @@ export default function Schedules() {
   const [cadence, setCadence] = useState<"daily" | "weekly" | "monthly">("weekly");
   const [prompt, setPrompt] = useState("");
   const [recipients, setRecipients] = useState("");
-  const [deliveryTargets, setDeliveryTargets] = useState("");
+  const [targets, setTargets] = useState<DeliveryTarget[]>([]);
+  const [editing, setEditing] = useState<Schedule | null>(null);
 
   const { data: schedules = [] } = useQuery<Schedule[]>({
     queryKey: ["/api/workspaces", current?.id, "schedules"],
@@ -51,15 +56,6 @@ export default function Schedules() {
 
   const create = useMutation({
     mutationFn: async () => {
-      let targets: any = null;
-      const trimmed = deliveryTargets.trim();
-      if (trimmed) {
-        try {
-          targets = JSON.stringify(JSON.parse(trimmed));
-        } catch (e: any) {
-          throw new Error("Delivery targets must be valid JSON");
-        }
-      }
       const r = await apiRequest("POST", "/api/schedules", {
         workspaceId: current!.id,
         name,
@@ -67,7 +63,7 @@ export default function Schedules() {
         cadence,
         prompt,
         recipients,
-        deliveryTargets: targets,
+        deliveryTargets: targets.length ? JSON.stringify(targets) : null,
         enabled: 1,
         lastRunAt: null,
         nextRunAt: Date.now() + (cadence === "daily" ? 86400000 : cadence === "weekly" ? 604800000 : 2592000000),
@@ -81,6 +77,7 @@ export default function Schedules() {
       setName("");
       setPrompt("");
       setRecipients("");
+      setTargets([]);
     },
   });
 
@@ -175,33 +172,15 @@ export default function Schedules() {
                 <Textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} data-testid="input-sched-prompt" />
               </div>
               <div>
-                <Label>Recipients (comma-separated emails)</Label>
-                <Input
-                  value={recipients}
-                  onChange={(e) => setRecipients(e.target.value)}
-                  placeholder="team@company.com, lp@company.com"
-                  data-testid="input-sched-recipients"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Quick path for email-only delivery. For vault / Substack / webhook delivery, use Advanced below.
+                <Label>Delivery targets</Label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Where the generated asset goes. Add multiple targets to fan out (e.g. vault + Substack + email).
                 </p>
-              </div>
-              <div>
-                <Label>Advanced delivery (JSON, optional)</Label>
-                <Textarea
-                  rows={5}
-                  value={deliveryTargets}
-                  onChange={(e) => setDeliveryTargets(e.target.value)}
-                  data-testid="input-sched-targets"
-                  placeholder={`[
-  {"type": "email", "recipients": "team@company.com"},
-  {"type": "vault", "connectionId": 1, "toolName": "obsidian_create_note", "pathTemplate": "06-Content-Drafts/{date}-{slug}.md"}
-]`}
-                  className="font-mono text-xs"
+                <DeliveryTargetEditor
+                  workspaceId={current?.id}
+                  value={targets}
+                  onChange={setTargets}
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Override Recipients with a list of typed targets. Supported: <code>email</code>, <code>vault</code>, <code>substack</code>, <code>webhook</code>. Templates: <code>{`{date}`}</code>, <code>{`{slug}`}</code>, <code>{`{title}`}</code>, <code>{`{kind}`}</code>.
-                </p>
               </div>
             </div>
             <DialogFooter>
@@ -235,11 +214,23 @@ export default function Schedules() {
                 <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                   {s.prompt}
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {s.recipients || "no recipients"} · next run{" "}
-                  {s.nextRunAt ? new Date(s.nextRunAt).toLocaleDateString() : "—"}
+                <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2">
+                  <span>
+                    next run {s.nextRunAt ? new Date(s.nextRunAt).toLocaleDateString() : "—"}
+                  </span>
+                  <span className="opacity-50">·</span>
+                  <span>{targetSummary(s)}</span>
                 </div>
               </div>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setEditing(s)}
+                data-testid={`button-edit-sched-${s.id}`}
+                aria-label="Edit"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
               <Button
                 size="sm"
                 variant="ghost"
@@ -268,6 +259,103 @@ export default function Schedules() {
           ))}
         </div>
       )}
+
+      <EditScheduleDialog
+        schedule={editing}
+        onClose={() => setEditing(null)}
+      />
     </div>
+  );
+}
+
+function targetSummary(s: Schedule): string {
+  if (s.deliveryTargets) {
+    try {
+      const arr = JSON.parse(s.deliveryTargets);
+      if (Array.isArray(arr) && arr.length) {
+        const types = arr.map((t: any) => t.type);
+        return `→ ${types.join(" + ")}`;
+      }
+    } catch {}
+  }
+  if (s.recipients?.trim()) return `→ email`;
+  return "no delivery";
+}
+
+function EditScheduleDialog({
+  schedule,
+  onClose,
+}: {
+  schedule: Schedule | null;
+  onClose: () => void;
+}) {
+  const { current } = useWorkspace();
+  const { toast } = useToast();
+  const [prompt, setPrompt] = useState("");
+  const [recipients, setRecipients] = useState("");
+  const [targets, setTargets] = useState<DeliveryTarget[]>([]);
+
+  // Reset form whenever a different schedule opens
+  useEffect(() => {
+    if (schedule) {
+      setPrompt(schedule.prompt ?? "");
+      setRecipients(schedule.recipients ?? "");
+      try {
+        const parsed = schedule.deliveryTargets ? JSON.parse(schedule.deliveryTargets) : [];
+        setTargets(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        setTargets([]);
+      }
+    }
+  }, [schedule]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!schedule) return;
+      await apiRequest("PATCH", `/api/schedules/${schedule.id}`, {
+        prompt,
+        recipients,
+        deliveryTargets: targets.length ? JSON.stringify(targets) : null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces", current?.id, "schedules"] });
+      toast({ title: "Saved" });
+      onClose();
+    },
+    onError: (e: any) => toast({ title: "Save failed", description: e?.message ?? "" }),
+  });
+
+  return (
+    <Dialog open={!!schedule} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Edit schedule — {schedule?.name}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Brief / prompt</Label>
+            <Textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+          </div>
+          <div>
+            <Label>Delivery targets</Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Add vault, Substack, email, or webhook targets. Multiple = fan-out delivery.
+            </p>
+            <DeliveryTargetEditor
+              workspaceId={current?.id}
+              value={targets}
+              onChange={setTargets}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

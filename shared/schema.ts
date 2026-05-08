@@ -27,6 +27,20 @@ export const sources = sqliteTable("sources", {
   createdAt: integer("created_at").notNull(),
 });
 
+// Asset versions — every regenerate snapshots the prior asset state here
+// before overwriting. Lets the UI surface 'v3 of 5' badges + restore.
+export const assetVersions = sqliteTable("asset_versions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  assetId: integer("asset_id").notNull(),
+  version: integer("version").notNull(),
+  status: text("status").notNull(),
+  contentHtml: text("content_html"),
+  filePath: text("file_path"),
+  outline: text("outline"),
+  prompt: text("prompt"),
+  createdAt: integer("created_at").notNull(),
+});
+
 // Templates — extracted from a sample document (image / PDF page) by LLM
 // vision; reusable as branded fillable forms. Powers invoices, branded
 // reports, newsletter mastheads, certificates — anything repetitive.
@@ -106,6 +120,10 @@ export const insertTemplateSchema = createInsertSchema(templates).omit({
   id: true,
   createdAt: true,
 });
+export const insertAssetVersionSchema = createInsertSchema(assetVersions).omit({
+  id: true,
+  createdAt: true,
+});
 export const insertAssetSchema = createInsertSchema(assets).omit({
   id: true,
   createdAt: true,
@@ -124,6 +142,8 @@ export type Connection = typeof connections.$inferSelect;
 export type InsertConnection = z.infer<typeof insertConnectionSchema>;
 export type Template = typeof templates.$inferSelect;
 export type InsertTemplate = z.infer<typeof insertTemplateSchema>;
+export type AssetVersion = typeof assetVersions.$inferSelect;
+export type InsertAssetVersion = z.infer<typeof insertAssetVersionSchema>;
 export type Asset = typeof assets.$inferSelect;
 export type InsertAsset = z.infer<typeof insertAssetSchema>;
 export type Schedule = typeof schedules.$inferSelect;

@@ -27,6 +27,8 @@ import {
   Trash2,
   Search,
   FolderInput,
+  RefreshCcw,
+  History,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import {
@@ -69,6 +71,18 @@ export default function Library() {
       queryClient.invalidateQueries({ queryKey: ["/api/workspaces", current?.id, "assets"] });
       toast({ title: "Deleted" });
     },
+  });
+
+  const regen = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await apiRequest("POST", `/api/assets/${id}/regenerate`);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workspaces", current?.id, "assets"] });
+      toast({ title: "Regenerated", description: "Prior version snapshotted." });
+    },
+    onError: (e: any) => toast({ title: "Regenerate failed", description: e?.message ?? "" }),
   });
 
   const filtered = assets
@@ -122,69 +136,21 @@ export default function Library() {
             const meta = KIND[a.kind];
             const Icon = meta.icon;
             return (
-              <Card key={a.id} className="p-4 flex flex-col" data-testid={`card-asset-${a.id}`}>
-                <div className="flex items-center gap-2.5">
-                  <div className="h-8 w-8 rounded-md bg-muted grid place-items-center shrink-0">
-                    <Icon className={`h-4 w-4 ${meta.color}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{a.title}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {meta.label} · {new Date(a.createdAt).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <Badge variant="secondary" className="text-[10px] capitalize">
-                    {a.status}
-                  </Badge>
-                </div>
-                {a.prompt && (
-                  <div className="text-xs text-muted-foreground mt-3 line-clamp-3 border-l-2 border-border pl-2.5 italic">
-                    {a.prompt}
-                  </div>
-                )}
-                <div className="mt-4 pt-3 border-t border-border flex items-center gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setPreviewAsset(a)}
-                    data-testid={`button-preview-${a.id}`}
-                  >
-                    <Eye className="h-3.5 w-3.5 mr-1" /> Preview
-                  </Button>
-                  <a
-                    href={apiUrl(`/api/assets/${a.id}/file`)}
-                    download
-                    data-testid={`link-download-${a.id}`}
-                  >
-                    <Button size="sm" variant="outline">
-                      <Download className="h-3.5 w-3.5 mr-1" /> Download
-                    </Button>
-                  </a>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setSaveAsset(a)}
-                    data-testid={`button-save-vault-${a.id}`}
-                  >
-                    <FolderInput className="h-3.5 w-3.5 mr-1" /> Save to vault
-                  </Button>
-                  <div className="flex-1" />
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => del.mutate(a.id)}
-                    data-testid={`button-delete-asset-${a.id}`}
-                    aria-label="Delete"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </Card>
+              <AssetCard
+                key={a.id}
+                a={a}
+                meta={meta}
+                Icon={Icon}
+                onPreview={() => setPreviewAsset(a)}
+                onSaveToVault={() => setSaveAsset(a)}
+                onRegenerate={() => regen.mutate(a.id)}
+                onDelete={() => del.mutate(a.id)}
+                regenPending={regen.isPending && regen.variables === a.id}
+              />
             );
           })}
         </div>
       )}
-
       <Dialog open={!!previewAsset} onOpenChange={(o) => !o && setPreviewAsset(null)}>
         <DialogContent className="max-w-4xl max-h-[85vh] p-0 overflow-hidden">
           <DialogHeader className="px-5 py-3 border-b">
@@ -213,9 +179,9 @@ export default function Library() {
                   <a
                     href={apiUrl(`/api/assets/${previewAsset.id}/file`)}
                     download
-                    className="inline-flex items-center gap-1.5 mt-4 bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm hover-elevate"
+                    className="inline-flex mt-3 text-primary text-sm underline"
                   >
-                    <Download className="h-4 w-4" /> Download deck
+                    Download
                   </a>
                 </div>
               )}
@@ -223,9 +189,103 @@ export default function Library() {
           )}
         </DialogContent>
       </Dialog>
-
       <SaveToVaultDialog asset={saveAsset} onClose={() => setSaveAsset(null)} />
     </div>
+  );
+}
+
+// ---- Asset card with version badge + actions ----
+
+type AssetCardProps = {
+  a: Asset;
+  meta: { label: string; icon: any; color: string };
+  Icon: any;
+  onPreview: () => void;
+  onSaveToVault: () => void;
+  onRegenerate: () => void;
+  onDelete: () => void;
+  regenPending: boolean;
+};
+
+function AssetCard({ a, meta, Icon, onPreview, onSaveToVault, onRegenerate, onDelete, regenPending }: AssetCardProps) {
+  const { data: versions = [] } = useQuery<Array<{ id: number; version: number; createdAt: number }>>({
+    queryKey: [`/api/assets/${a.id}/versions`],
+  });
+
+  const versionCount = versions.length;
+  return (
+    <Card className="p-4 flex flex-col" data-testid={`card-asset-${a.id}`}>
+      <div className="flex items-center gap-2.5">
+        <div className="h-8 w-8 rounded-md bg-muted grid place-items-center shrink-0">
+          <Icon className={`h-4 w-4 ${meta.color}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium truncate">{a.title}</div>
+          <div className="text-xs text-muted-foreground">
+            {meta.label} · {new Date(a.createdAt).toLocaleDateString()}
+            {versionCount > 0 && (
+              <>
+                {" "}·{" "}
+                <span className="inline-flex items-center gap-0.5">
+                  <History className="h-3 w-3" /> v{versionCount + 1}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <Badge variant="secondary" className="text-[10px] capitalize">
+          {a.status}
+        </Badge>
+      </div>
+      {a.prompt && (
+        <div className="text-xs text-muted-foreground mt-3 line-clamp-3 border-l-2 border-border pl-2.5 italic">
+          {a.prompt}
+        </div>
+      )}
+      <div className="mt-4 pt-3 border-t border-border flex items-center gap-1.5 flex-wrap">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onPreview}
+          data-testid={`button-preview-${a.id}`}
+        >
+          <Eye className="h-3.5 w-3.5 mr-1" /> Preview
+        </Button>
+        <a href={apiUrl(`/api/assets/${a.id}/file`)} download>
+          <Button size="sm" variant="outline">
+            <Download className="h-3.5 w-3.5 mr-1" /> Download
+          </Button>
+        </a>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onSaveToVault}
+          data-testid={`button-save-vault-${a.id}`}
+        >
+          <FolderInput className="h-3.5 w-3.5 mr-1" /> Save to vault
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onRegenerate}
+          disabled={regenPending}
+          data-testid={`button-regen-${a.id}`}
+        >
+          <RefreshCcw className={`h-3.5 w-3.5 mr-1 ${regenPending ? "animate-spin" : ""}`} />
+          Regenerate
+        </Button>
+        <div className="flex-1" />
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={onDelete}
+          data-testid={`button-delete-asset-${a.id}`}
+          aria-label="Delete"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    </Card>
   );
 }
 

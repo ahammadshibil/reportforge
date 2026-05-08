@@ -25,6 +25,16 @@ import { runSchedule, nextRunFor } from "./runner";
 import { emailConfigured } from "./email";
 import rateLimit from "express-rate-limit";
 
+// JSON.parse with null fallback — for asset.outline / asset.sourceIds blobs
+function safeParse<T = any>(s: string | null | undefined): T | null {
+  if (!s) return null;
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -324,6 +334,123 @@ export async function registerRoutes(
 
   app.get("/api/email/status", guard, (_req, res) => {
     res.json({ configured: emailConfigured() });
+  });
+
+  // ----- Asset versions -----
+  app.get("/api/assets/:id/versions", guard, (req, res) => {
+    const versions = storage.listAssetVersions(Number(req.params.id));
+    // Don't bleed full content_html / outline blobs across the wire — return
+    // metadata + size hints; clients can fetch a specific version's content
+    // via /api/assets/:id/versions/:vid if needed (future).
+    res.json(
+      versions.map((v) => ({
+        id: v.id,
+        version: v.version,
+        status: v.status,
+        createdAt: v.createdAt,
+        prompt: v.prompt,
+        hasHtml: !!v.contentHtml,
+        hasFile: !!v.filePath,
+      }))
+    );
+  });
+
+  // POST /api/assets/:id/regenerate
+  // - Snapshots current asset state into asset_versions
+  // - Re-runs synthesis (or template render) using the asset's stored
+  //   prompt + sourceIds  (or outline.{templateId,values,lineItems})
+  // - Replaces the asset's content in place
+  app.post("/api/assets/:id/regenerate", guard, async (req, res) => {
+    const a = storage.getAsset(Number(req.params.id));
+    if (!a) return res.status(404).json({ error: "asset_not_found" });
+    const ws = storage.getWorkspace(a.workspaceId);
+    if (!ws) return res.status(400).json({ error: "workspace_missing" });
+
+    // 1. Snapshot. Version number = current count + 1.
+    const priorCount = storage.countAssetVersions(a.id);
+    storage.createAssetVersion({
+      assetId: a.id,
+      version: priorCount + 1,
+      status: a.status,
+      contentHtml: a.contentHtml ?? null,
+      filePath: a.filePath ?? null,
+      outline: a.outline ?? null,
+      prompt: a.prompt ?? null,
+    });
+
+    storage.updateAsset(a.id, { status: "generating" });
+    const brandColor = ws.brandColor || getBrand().color;
+
+    try {
+      // Detect path: template-render vs synthesis
+      const outlineMeta = a.outline ? safeParse(a.outline) : null;
+      const isTemplateRender =
+        outlineMeta && typeof outlineMeta.templateId === "number";
+
+      if (isTemplateRender) {
+        const t = storage.getTemplate(outlineMeta.templateId);
+        if (!t) throw new Error("template_missing");
+        const { renderTemplateHtml } = await import("./templates");
+        const html = renderTemplateHtml(
+          JSON.parse(t.schema),
+          (outlineMeta.values ?? {}) as Record<string, any>,
+          Array.isArray(outlineMeta.lineItems) ? outlineMeta.lineItems : []
+        );
+        const updated = storage.updateAsset(a.id, {
+          contentHtml: html,
+          status: "ready",
+        });
+        return res.json(updated);
+      }
+
+      // Synthesis path — re-run with the same prompt + sourceIds + kind.
+      const ids: number[] = a.sourceIds ? safeParse(a.sourceIds) ?? [] : [];
+      const allSources = storage.listSources(ws.id);
+      const sources = ids.length ? allSources.filter((s) => ids.includes(s.id)) : allSources;
+      const newPrompt: string = typeof req.body?.prompt === "string" ? req.body.prompt : a.prompt ?? "";
+
+      const newOutline = await synthesize({
+        title: a.title,
+        prompt: newPrompt,
+        tone: "formal",
+        sources,
+        kind: a.kind as "newsletter" | "report" | "deck",
+      });
+
+      const updates: any = {
+        outline: JSON.stringify(newOutline),
+        prompt: newPrompt,
+        status: "ready",
+      };
+      if (a.kind === "newsletter") {
+        updates.contentHtml = generateNewsletterHtml({
+          outline: newOutline,
+          brandColor,
+          workspaceName: ws.name,
+        });
+      } else if (a.kind === "report") {
+        // Reuse the asset id so the file stays at <id>_<slug>.pdf and
+        // overwrites in place — Library URLs don't break.
+        updates.filePath = await generatePdfReport({
+          outline: newOutline,
+          brandColor,
+          workspaceName: ws.name,
+          assetId: a.id,
+        });
+      } else if (a.kind === "deck") {
+        updates.filePath = await generatePptxDeck({
+          outline: newOutline,
+          brandColor,
+          workspaceName: ws.name,
+          assetId: a.id,
+        });
+      }
+      const updated = storage.updateAsset(a.id, updates);
+      res.json(updated);
+    } catch (e: any) {
+      storage.updateAsset(a.id, { status: "failed" });
+      res.status(500).json({ error: e?.message ?? "regenerate_failed" });
+    }
   });
 
   // ----- Save asset to MCP target (e.g. Obsidian vault) -----

@@ -5,6 +5,7 @@ import {
   schedules,
   connections,
   templates,
+  assetVersions,
 } from "@shared/schema";
 import type {
   Workspace,
@@ -19,6 +20,8 @@ import type {
   InsertConnection,
   Template,
   InsertTemplate,
+  AssetVersion,
+  InsertAssetVersion,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -101,6 +104,18 @@ CREATE TABLE IF NOT EXISTS templates (
   brand_color TEXT,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS asset_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER NOT NULL,
+  version INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  content_html TEXT,
+  file_path TEXT,
+  outline TEXT,
+  prompt TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_asset_versions_asset ON asset_versions(asset_id);
 `);
 
 // Additive migrations — safe to run repeatedly. Each ALTER is wrapped so
@@ -157,6 +172,10 @@ export interface IStorage {
   createTemplate(t: InsertTemplate): Template;
   updateTemplate(id: number, t: Partial<InsertTemplate>): Template | undefined;
   deleteTemplate(id: number): void;
+  // Asset versions
+  listAssetVersions(assetId: number): AssetVersion[];
+  createAssetVersion(v: InsertAssetVersion): AssetVersion;
+  countAssetVersions(assetId: number): number;
 }
 
 class DatabaseStorage implements IStorage {
@@ -320,6 +339,25 @@ class DatabaseStorage implements IStorage {
   }
   deleteTemplate(id: number) {
     db.delete(templates).where(eq(templates.id, id)).run();
+  }
+
+  listAssetVersions(assetId: number) {
+    return db
+      .select()
+      .from(assetVersions)
+      .where(eq(assetVersions.assetId, assetId))
+      .orderBy(desc(assetVersions.version))
+      .all();
+  }
+  createAssetVersion(v: InsertAssetVersion) {
+    return db
+      .insert(assetVersions)
+      .values({ ...v, createdAt: Date.now() })
+      .returning()
+      .get();
+  }
+  countAssetVersions(assetId: number) {
+    return this.listAssetVersions(assetId).length;
   }
 }
 

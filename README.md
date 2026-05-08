@@ -133,6 +133,36 @@ Single admin per deploy. Set `ADMIN_EMAIL` plus either `ADMIN_PASSWORD` (dev) or
 
 For local development you can set `AUTH_DISABLED=1` to skip the gate entirely.
 
+## BYOR as an MCP server
+
+BYOR exposes its primitives as a Model Context Protocol server, so Claude Desktop / Cursor / any MCP-aware agent can drive the whole pipeline without ever touching the UI.
+
+```bash
+npm run mcp                                # speaks MCP over stdio
+```
+
+Wire to Claude Desktop (`~/.claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "byor": {
+      "command": "npx",
+      "args": ["tsx", "/abs/path/to/reportforge/server/mcp-server/index.ts"],
+      "env": {
+        "DATA_DIR": "/abs/path/to/reportforge/prod-data",
+        "ANTHROPIC_API_KEY": "...",
+        "BRAND_NAME": "BYOR"
+      }
+    }
+  }
+}
+```
+
+Tools exposed: `byor_list_workspaces`, `byor_list_sources`, `byor_create_source`, `byor_list_templates`, `byor_list_assets`, `byor_synthesize`, `byor_fill_template`, `byor_render_template`, `byor_run_schedule`. Resources: `byor://assets/{id}`, `byor://templates/{id}`, `byor://sources/{id}`.
+
+This closes the loop in both directions: BYOR consumes any other MCP server as a source (Phase 6+), and BYOR is itself an MCP server other agents can call.
+
 ## Roadmap
 
 - [x] Phase 1 — Whitelabel foundation: env brand config, session auth, login gate

@@ -22,6 +22,12 @@ export function registerConnectorRoutes(app: Express, guard: RequestHandler) {
     res.json(listConnectorTypes());
   });
 
+  // ----- MCP preset catalog -----
+  app.get("/api/connections/mcp/presets", guard, async (_req, res) => {
+    const { MCP_PRESETS } = await import("./mcpPresets");
+    res.json(MCP_PRESETS);
+  });
+
   // ----- List connections for a workspace -----
   app.get("/api/workspaces/:id/connections", guard, (req, res) => {
     const list = storage.listConnections(Number(req.params.id));

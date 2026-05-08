@@ -3,12 +3,14 @@ import { googleDrive } from "./googleDrive";
 import { notion } from "./notion";
 import { airtable } from "./airtable";
 import { urlConnector } from "./url";
+import { mcpConnector } from "./mcp";
 
 const REGISTRY: Record<string, Connector> = {
   google_drive: googleDrive,
   notion: notion,
   airtable: airtable,
   url: urlConnector,
+  mcp: mcpConnector,
 };
 
 const ENV_REQ: Record<string, string[]> = {
@@ -16,6 +18,7 @@ const ENV_REQ: Record<string, string[]> = {
   notion: ["NOTION_CLIENT_ID", "NOTION_CLIENT_SECRET", "NOTION_REDIRECT_URI"],
   airtable: [],
   url: [],
+  mcp: [], // each MCP server is configured per-connection (presets supply defaults)
 };
 
 export function getConnector(id: string): Connector | undefined {
@@ -27,7 +30,15 @@ export function listConnectorTypes(): Array<{
   label: string;
   available: boolean;
   authMode: "oauth" | "key";
+  description?: string;
 }> {
+  const DESCRIPTIONS: Partial<Record<ConnectorId, string>> = {
+    google_drive: "Browse + import files from Google Drive (OAuth).",
+    notion: "Search + import Notion pages (OAuth, native).",
+    airtable: "Read records from Airtable bases (PAT).",
+    url: "Fetch + strip web URLs as plain-text sources.",
+    mcp: "Any MCP server — Colab, Notion, Perplexity, Jupyter, Obsidian, …",
+  };
   return Object.values(REGISTRY).map((c) => {
     const need = ENV_REQ[c.id] || [];
     const available = need.every((k) => !!(process.env[k] && process.env[k]!.trim()));
@@ -36,6 +47,7 @@ export function listConnectorTypes(): Array<{
       label: c.label,
       available,
       authMode: c.authUrl ? "oauth" : "key",
+      description: DESCRIPTIONS[c.id],
     };
   });
 }

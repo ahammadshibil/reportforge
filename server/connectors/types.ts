@@ -9,7 +9,8 @@ export type ConnectorId =
   | "google_drive"
   | "notion"
   | "airtable"
-  | "url";
+  | "url"
+  | "mcp";
 
 export type ConnectorListItem = {
   externalId: string;

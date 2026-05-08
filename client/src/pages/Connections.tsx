@@ -246,6 +246,32 @@ function KeyDialog({
     }
   }, [type]);
 
+  // ----- MCP-specific state -----
+  type McpPreset = {
+    id: string;
+    label: string;
+    description: string;
+    status: "official" | "community-mature" | "community-fragile";
+    transport: "stdio" | "http";
+    command?: string;
+    args?: string[];
+    url?: string;
+    envFields?: Array<{ key: string; label: string; placeholder?: string; required?: boolean }>;
+    homepage: string;
+  };
+  const [mcpPresetId, setMcpPresetId] = useState<string>("colab");
+  const [mcpEnv, setMcpEnv] = useState<Record<string, string>>({});
+  const [mcpCustomCommand, setMcpCustomCommand] = useState("");
+  const [mcpCustomArgs, setMcpCustomArgs] = useState("");
+  const [mcpCustomUrl, setMcpCustomUrl] = useState("");
+  const [mcpCustomTransport, setMcpCustomTransport] = useState<"stdio" | "http">("stdio");
+
+  const { data: mcpPresets = [] } = useQuery<McpPreset[]>({
+    queryKey: ["/api/connections/mcp/presets"],
+    enabled: type?.id === "mcp",
+  });
+  const activePreset = mcpPresets.find((p) => p.id === mcpPresetId);
+
   const createMut = useMutation({
     mutationFn: async () => {
       if (!type || !current) return;
@@ -255,6 +281,29 @@ function KeyDialog({
         if (baseId) body.baseId = baseId;
       } else if (type.id === "url") {
         body.urls = urls;
+        if (name) body.name = name;
+      } else if (type.id === "mcp") {
+        if (mcpPresetId === "custom") {
+          body.transport = mcpCustomTransport;
+          if (mcpCustomTransport === "stdio") {
+            body.command = mcpCustomCommand;
+            body.args = mcpCustomArgs;
+          } else {
+            body.url = mcpCustomUrl;
+          }
+        } else if (activePreset) {
+          body.transport = activePreset.transport;
+          if (activePreset.transport === "stdio") {
+            body.command = activePreset.command;
+            body.args = activePreset.args;
+          } else if (activePreset.url) {
+            body.url = activePreset.url;
+          }
+        }
+        const env = Object.fromEntries(
+          Object.entries(mcpEnv).filter(([, v]) => v !== "")
+        );
+        if (Object.keys(env).length) body.env = env;
         if (name) body.name = name;
       }
       await apiRequest("POST", `/api/connections/${type.id}/key`, body);
@@ -302,6 +351,159 @@ function KeyDialog({
                 onChange={(e) => setBaseId(e.target.value)}
                 placeholder="appXXXXXXXXXXXXXX"
                 data-testid="input-airtable-base"
+              />
+            </div>
+          </div>
+        )}
+        {type?.id === "mcp" && (
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="space-y-1.5">
+              <Label>MCP server</Label>
+              <div className="grid grid-cols-1 gap-1.5">
+                {mcpPresets.map((p) => {
+                  const active = mcpPresetId === p.id;
+                  const badgeColor =
+                    p.status === "official"
+                      ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                      : p.status === "community-mature"
+                        ? "bg-sky-100 text-sky-700 border-sky-200"
+                        : "bg-amber-100 text-amber-700 border-amber-200";
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        setMcpPresetId(p.id);
+                        setMcpEnv({});
+                      }}
+                      className={`text-left rounded-md border p-2.5 hover-elevate ${
+                        active ? "border-primary bg-primary/5" : "border-border"
+                      }`}
+                      data-testid={`mcp-preset-${p.id}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm font-medium flex-1">{p.label}</div>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${badgeColor}`}>
+                          {p.status === "official"
+                            ? "official"
+                            : p.status === "community-mature"
+                              ? "community"
+                              : "fragile"}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{p.description}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {mcpPresetId === "custom" ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label>Transport</Label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMcpCustomTransport("stdio")}
+                      className={`px-3 py-1.5 rounded-md border text-sm ${
+                        mcpCustomTransport === "stdio" ? "border-primary bg-primary/5" : "border-border"
+                      }`}
+                    >
+                      stdio (subprocess)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMcpCustomTransport("http")}
+                      className={`px-3 py-1.5 rounded-md border text-sm ${
+                        mcpCustomTransport === "http" ? "border-primary bg-primary/5" : "border-border"
+                      }`}
+                    >
+                      http (SSE)
+                    </button>
+                  </div>
+                </div>
+                {mcpCustomTransport === "stdio" ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="mcp-cmd">Command</Label>
+                      <Input
+                        id="mcp-cmd"
+                        value={mcpCustomCommand}
+                        onChange={(e) => setMcpCustomCommand(e.target.value)}
+                        placeholder="npx"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="mcp-args">Args</Label>
+                      <Input
+                        id="mcp-args"
+                        value={mcpCustomArgs}
+                        onChange={(e) => setMcpCustomArgs(e.target.value)}
+                        placeholder="-y my-mcp-server"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="mcp-url">SSE URL</Label>
+                    <Input
+                      id="mcp-url"
+                      value={mcpCustomUrl}
+                      onChange={(e) => setMcpCustomUrl(e.target.value)}
+                      placeholder="https://mcp.example.com/sse"
+                    />
+                  </div>
+                )}
+              </>
+            ) : (
+              activePreset && (
+                <>
+                  {activePreset.transport === "stdio" && activePreset.command && (
+                    <div className="rounded-md bg-muted/40 px-3 py-2 text-xs font-mono text-muted-foreground">
+                      {activePreset.command} {(activePreset.args || []).join(" ")}
+                    </div>
+                  )}
+                  {(activePreset.envFields || []).map((f) => (
+                    <div key={f.key} className="space-y-1.5">
+                      <Label htmlFor={`mcp-env-${f.key}`}>
+                        {f.label}
+                        {f.required ? <span className="text-destructive ml-0.5">*</span> : null}
+                      </Label>
+                      <Input
+                        id={`mcp-env-${f.key}`}
+                        type={f.key.toLowerCase().includes("password") || f.key.toLowerCase().includes("token") || f.key.toLowerCase().includes("key") ? "password" : "text"}
+                        value={mcpEnv[f.key] ?? ""}
+                        onChange={(e) =>
+                          setMcpEnv((p) => ({ ...p, [f.key]: e.target.value }))
+                        }
+                        placeholder={f.placeholder}
+                        data-testid={`mcp-env-${f.key}`}
+                      />
+                    </div>
+                  ))}
+                  <div className="text-xs text-muted-foreground">
+                    Docs:{" "}
+                    <a
+                      href={activePreset.homepage}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline hover:text-foreground"
+                    >
+                      {activePreset.homepage}
+                    </a>
+                  </div>
+                </>
+              )
+            )}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="mcp-name">Connection name (optional)</Label>
+              <Input
+                id="mcp-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="auto-derived from server"
               />
             </div>
           </div>

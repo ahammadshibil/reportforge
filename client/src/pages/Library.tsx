@@ -26,8 +26,18 @@ import {
   Eye,
   Trash2,
   Search,
+  FolderInput,
 } from "lucide-react";
-import type { Asset } from "@shared/schema";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from "@/components/ui/select";
+import { DialogFooter } from "@/components/ui/dialog";
+import type { Asset, Connection } from "@shared/schema";
 
 const KIND: Record<string, { label: string; icon: any; color: string }> = {
   newsletter: { label: "Newsletter", icon: Mail, color: "text-fuchsia-500" },
@@ -41,6 +51,7 @@ export default function Library() {
   const [filter, setFilter] = useState<"all" | "newsletter" | "report" | "deck">("all");
   const [q, setQ] = useState("");
   const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
+  const [saveAsset, setSaveAsset] = useState<Asset | null>(null);
 
   const { data: assets = [], isLoading } = useQuery<Asset[]>({
     queryKey: ["/api/workspaces", current?.id, "assets"],
@@ -149,6 +160,14 @@ export default function Library() {
                       <Download className="h-3.5 w-3.5 mr-1" /> Download
                     </Button>
                   </a>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSaveAsset(a)}
+                    data-testid={`button-save-vault-${a.id}`}
+                  >
+                    <FolderInput className="h-3.5 w-3.5 mr-1" /> Save to vault
+                  </Button>
                   <div className="flex-1" />
                   <Button
                     size="icon"
@@ -204,6 +223,184 @@ export default function Library() {
           )}
         </DialogContent>
       </Dialog>
+
+      <SaveToVaultDialog asset={saveAsset} onClose={() => setSaveAsset(null)} />
     </div>
+  );
+}
+
+// ----- Save to vault (Obsidian / any MCP) -----
+
+type ConnectionRow = Connection & { hasConfig?: boolean };
+type ToolDef = { name: string; description?: string };
+
+function defaultPath(title: string): string {
+  const slug = (title || "untitled")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 60)
+    .replace(/^-|-$/g, "");
+  const date = new Date().toISOString().slice(0, 10);
+  return `06-Content-Drafts/${date}-${slug || "untitled"}.md`;
+}
+
+function looksLikeWriteTool(name: string): boolean {
+  const n = name.toLowerCase();
+  return (
+    /create|write|append|save|update|put|new/.test(n) &&
+    /note|file|page|content|document/.test(n)
+  );
+}
+
+function SaveToVaultDialog({
+  asset,
+  onClose,
+}: {
+  asset: Asset | null;
+  onClose: () => void;
+}) {
+  const { current } = useWorkspace();
+  const { toast } = useToast();
+  const [connectionId, setConnectionId] = useState<string>("");
+  const [toolName, setToolName] = useState<string>("");
+  const [path, setPath] = useState<string>("");
+
+  const { data: connections = [] } = useQuery<ConnectionRow[]>({
+    queryKey: [`/api/workspaces/${current?.id}/connections`],
+    enabled: !!current && !!asset,
+  });
+  const mcpConnections = connections.filter((c) => c.type === "mcp");
+
+  const { data: toolsData } = useQuery<{ tools: ToolDef[] }>({
+    queryKey: [`/api/connections/${connectionId}/tools`],
+    enabled: !!connectionId,
+  });
+  const tools = toolsData?.tools ?? [];
+  const writeTools = tools.filter((t) => looksLikeWriteTool(t.name));
+  const visibleTools = writeTools.length ? writeTools : tools;
+
+  // Defaults when dialog opens
+  if (asset && path === "") setPath(defaultPath(asset.title));
+  if (mcpConnections.length === 1 && !connectionId) {
+    setConnectionId(String(mcpConnections[0].id));
+  }
+  if (visibleTools.length && !toolName) {
+    setToolName(visibleTools[0].name);
+  }
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      if (!asset) return;
+      const r = await apiRequest("POST", `/api/assets/${asset.id}/save-to-mcp`, {
+        connectionId: Number(connectionId),
+        toolName,
+        path,
+      });
+      return r.json();
+    },
+    onSuccess: (r: any) => {
+      toast({
+        title: "Saved to vault",
+        description: r?.path ?? "",
+      });
+      onClose();
+      setConnectionId("");
+      setToolName("");
+      setPath("");
+    },
+    onError: (e: any) => {
+      toast({ title: "Save failed", description: e?.message ?? "" });
+    },
+  });
+
+  return (
+    <Dialog
+      open={!!asset}
+      onOpenChange={(o) => {
+        if (!o) {
+          onClose();
+          setConnectionId("");
+          setToolName("");
+          setPath("");
+        }
+      }}
+    >
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Save to vault</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          {mcpConnections.length === 0 ? (
+            <div className="rounded-md bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              No MCP connections in this workspace yet. Add one (e.g. Obsidian) on the
+              Connections page.
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="save-conn">Connection</Label>
+                <Select value={connectionId} onValueChange={setConnectionId}>
+                  <SelectTrigger id="save-conn">
+                    <SelectValue placeholder="Pick MCP connection…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mcpConnections.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="save-tool">Write tool</Label>
+                <Select value={toolName} onValueChange={setToolName}>
+                  <SelectTrigger id="save-tool">
+                    <SelectValue placeholder="Pick tool…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {visibleTools.map((t) => (
+                      <SelectItem key={t.name} value={t.name}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {writeTools.length > 0 && writeTools.length < tools.length && (
+                  <p className="text-xs text-muted-foreground">
+                    Showing {writeTools.length} write-shaped tools (filtered from {tools.length}).
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="save-path">Vault path</Label>
+                <Input
+                  id="save-path"
+                  value={path}
+                  onChange={(e) => setPath(e.target.value)}
+                  placeholder="06-Content-Drafts/2026-05-08-q1-update.md"
+                  data-testid="input-save-path"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Relative to your vault root. Folders are created automatically by Obsidian.
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => saveMut.mutate()}
+            disabled={!connectionId || !toolName || !path || saveMut.isPending}
+            data-testid="button-save-vault-go"
+          >
+            {saveMut.isPending ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

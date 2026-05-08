@@ -316,6 +316,74 @@ export async function registerRoutes(
     res.json({ configured: emailConfigured() });
   });
 
+  // ----- Save asset to MCP target (e.g. Obsidian vault) -----
+  // body: { connectionId, toolName, path, format?: 'markdown'|'html' }
+  app.post("/api/assets/:id/save-to-mcp", guard, async (req, res) => {
+    const a = storage.getAsset(Number(req.params.id));
+    if (!a) return res.status(404).json({ error: "asset_not_found" });
+    const conn = storage.getConnection(Number(req.body?.connectionId));
+    if (!conn || conn.type !== "mcp") {
+      return res.status(400).json({ error: "not_mcp_connection" });
+    }
+    const toolName = String(req.body?.toolName || "").trim();
+    if (!toolName) return res.status(400).json({ error: "toolName required" });
+    const format = req.body?.format === "html" ? "html" : "markdown";
+
+    try {
+      const { outlineToMarkdown, htmlToMarkdown, defaultVaultPath } = await import("./vaultExport");
+      const ws = storage.getWorkspace(a.workspaceId);
+      const brandName = ws?.name || "BYOR";
+
+      let content = "";
+      if (a.outline) {
+        const outline = JSON.parse(a.outline);
+        if (format === "html" && a.contentHtml) content = a.contentHtml;
+        else content = outlineToMarkdown(outline, { assetId: a.id, brandName });
+      } else if (a.contentHtml) {
+        content =
+          format === "html"
+            ? a.contentHtml
+            : `# ${a.title}\n\n${htmlToMarkdown(a.contentHtml)}`;
+      } else {
+        return res.status(400).json({ error: "asset_has_no_renderable_content" });
+      }
+
+      const path = String(req.body?.path || defaultVaultPath(a.title));
+      const args: Record<string, unknown> = {
+        // most Obsidian MCP servers accept one of these — send all so the
+        // server picks the one its tool actually expects.
+        filepath: path,
+        path,
+        filename: path,
+        content,
+        ...(req.body?.extraArgs && typeof req.body.extraArgs === "object"
+          ? req.body.extraArgs
+          : {}),
+      };
+
+      const { mcpCallTool } = await import("./connectors/mcp");
+      const result = await mcpCallTool(conn, toolName, args);
+      res.json({ ok: true, path, toolName, result });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "save_failed" });
+    }
+  });
+
+  // List the tools an MCP connection exposes (UI uses this to build write-tool pickers).
+  app.get("/api/connections/:id/tools", guard, async (req, res) => {
+    const conn = storage.getConnection(Number(req.params.id));
+    if (!conn || conn.type !== "mcp") {
+      return res.status(400).json({ error: "not_mcp_connection" });
+    }
+    try {
+      const { mcpListTools } = await import("./connectors/mcp");
+      const tools = await mcpListTools(conn);
+      res.json({ tools });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "list_tools_failed" });
+    }
+  });
+
   // ----- Templates -----
   app.get("/api/workspaces/:id/templates", guard, (req, res) => {
     res.json(storage.listTemplates(Number(req.params.id)));

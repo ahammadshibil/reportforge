@@ -71,6 +71,39 @@ async function safeClose(client: Client) {
   }
 }
 
+// Direct tool-call helper for use outside the connector's list/fetch
+// surface — e.g. writing a generated asset back to an Obsidian vault.
+// Returns the raw tool result; callers extract what they need.
+export async function mcpCallTool(
+  connection: import("@shared/schema").Connection,
+  toolName: string,
+  args: Record<string, unknown>
+) {
+  const cfg = readConfig<McpConfig>(connection);
+  const client = await connectClient(cfg);
+  try {
+    return await client.callTool({ name: toolName, arguments: args });
+  } finally {
+    await safeClose(client);
+  }
+}
+
+// Discover tool names on demand — UI uses this to populate write-tool pickers.
+export async function mcpListTools(connection: import("@shared/schema").Connection) {
+  const cfg = readConfig<McpConfig>(connection);
+  const client = await connectClient(cfg);
+  try {
+    const out = await client.listTools();
+    return (out.tools || []).map((t: any) => ({
+      name: String(t.name),
+      description: t.description ? String(t.description) : undefined,
+      inputSchema: t.inputSchema,
+    }));
+  } finally {
+    await safeClose(client);
+  }
+}
+
 export const mcpConnector: Connector = {
   id: "mcp",
   label: "MCP server",

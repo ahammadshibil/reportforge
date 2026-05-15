@@ -1,0 +1,57 @@
+# Railway declarative config — picked up automatically on every deploy.
+# Workflow:
+#   1. Connect this GitHub repo on railway.com → New Project → Deploy from GitHub repo
+#   2. Railway auto-detects the Dockerfile + reads this railway.toml
+#   3. Add a Volume (Settings → Volumes → mount at /data, size 1GB+)
+#   4. Set env secrets (see [environments.production.variables] keys below)
+#   5. Deploy
+#
+# Alternatively from the CLI:
+#   railway login                                 (browser auth — interactive)
+#   railway init --name byor                      (create project)
+#   railway up                                    (push code + build)
+#   railway volume add data /data                 (1GB persistent volume)
+#   railway variables set KEY=value …             (one per secret)
+#   railway deploy                                (build + run)
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Healthcheck so failed deploys roll back automatically.
+healthcheckPath = "/api/brand"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+# 10 minutes — long enough for npm + uv installs in the Dockerfile build stage.
+numReplicas = 1
+startCommand = "node dist/index.cjs"
+
+# Env vars to set in the Railway dashboard (Service → Variables).
+# This file documents the keys; values go in the dashboard so they're not
+# committed. Anything with a default is optional.
+#
+# Required:
+#   SESSION_SECRET            (openssl rand -hex 32)
+#   ADMIN_EMAIL               (your login)
+#   ADMIN_PASSWORD            (or ADMIN_PASSWORD_HASH for bcrypt)
+#   LLM_API_KEY               (your provider key — Perplexity / OpenAI / Gemini / etc.)
+#   LLM_BASE_URL              (https://api.perplexity.ai for Perplexity, etc.)
+#   LLM_MODEL                 (sonar, gpt-4o-mini, gemini-2.0-flash, …)
+#
+# Strongly recommended:
+#   VISION_LLM_PROVIDER=gemini
+#   VISION_LLM_API_KEY        (free at aistudio.google.com — text-only LLMs can't extract templates)
+#   VISION_LLM_MODEL=gemini-2.0-flash
+#   BYOR_ENCRYPTION_KEY       (openssl rand -hex 32 — at-rest encryption for connection tokens)
+#   RESEND_API_KEY            (for email delivery)
+#   EMAIL_FROM                ("BYOR <reports@yourdomain.com>")
+#
+# Branding:
+#   BRAND_NAME, BRAND_TAGLINE, BRAND_COLOR, BRAND_DOMAIN
+#
+# Fixed by railway.toml — don't override unless you know why:
+#   PORT                      Railway sets this automatically; BYOR reads it
+#   NODE_ENV=production       Set automatically by node:20-bookworm-slim runtime
+#   DATA_DIR=/data            Mount point of the persistent volume

@@ -209,6 +209,11 @@ async function deliverVault(
     path,
     filename: path,
     content,
+    // Re-runs of the same daily/weekly schedule write to the same path —
+    // default to replace-in-place. (Users who want a versioned history
+    // can use {date}-{slug} + a more granular template, or compose
+    // additional vault targets pointing at archive paths.)
+    overwrite: true,
   };
   try {
     const { mcpCallTool } = await import("./connectors/mcp");

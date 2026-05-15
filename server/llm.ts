@@ -172,21 +172,29 @@ async function callOpenAI(
   user: string
 ): Promise<string> {
   const url = (baseUrl || "https://api.openai.com/v1") + "/chat/completions";
+  // response_format: {type:"json_object"} is OpenAI-specific. Perplexity
+  // rejects it (only accepts text|json_schema|regex), Groq's older models
+  // ignore it silently, OpenRouter passes it through to the underlying model
+  // which may or may not support it. Safest: only send it when actually
+  // hitting api.openai.com. For everything else, rely on the strict prompt
+  // + the tolerant parser (parseOutline strips fences and finds the JSON).
+  const isOpenAI = !baseUrl || /(^|\.)openai\.com\//.test(baseUrl);
+  const body: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    temperature: 0.4,
+  };
+  if (isOpenAI) body.response_format = { type: "json_object" };
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.4,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`OpenAI(${url}) ${res.status}: ${await res.text()}`);
   const j = (await res.json()) as { choices: Array<{ message: { content: string } }> };

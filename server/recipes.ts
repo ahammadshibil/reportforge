@@ -12,7 +12,18 @@ export type Recipe = {
   id: string;
   name: string;
   description: string;
-  category: "vc" | "biotech" | "general";
+  category: "vc" | "biotech" | "general" | "founder" | "engineering" | "marketing" | "oss";
+  // Who this is for (one-liner shown in the marketplace card)
+  bestFor?: string;
+  // Connectors the user should wire to get the full value. Recipe still
+  // installs without these; values populate the install dialog as a checklist.
+  connectorsRecommended?: Array<{ type: string; label: string; required?: boolean }>;
+  // Human-readable cadence label (the schedule's cadence field is enum,
+  // this displays e.g. "End of every month" / "Every Monday 9am")
+  cadenceLabel?: string;
+  // Short example excerpt of what the generated output looks like — shown
+  // before install so users can see if the voice matches what they want.
+  exampleOutput?: string;
   // What to create
   workspace: {
     name: string;
@@ -192,7 +203,25 @@ const FOUNDER_MONTHLY_UPDATE: Recipe = {
   name: "Founder Monthly Update",
   description:
     "End-of-month investor update. Pulls live numbers from Stripe + GitHub via connectors, synthesizes a structured update with TL;DR, KPIs, ship log, hires, asks. Wire it once, fire on the 28th forever.",
-  category: "general",
+  category: "founder",
+  bestFor: "YC / seed / Series A founders writing monthly investor updates",
+  cadenceLabel: "End of every month (28th)",
+  connectorsRecommended: [
+    { type: "stripe", label: "Stripe (revenue + MRR + customers)", required: true },
+    { type: "github", label: "GitHub (commits + PRs + releases)", required: true },
+    { type: "notion", label: "Notion (qualitative notes — wins, lowlights, asks)" },
+  ],
+  exampleOutput: `**TL;DR.** MRR grew 18% to $42k, two enterprise pilots converted, and we shipped the redesigned onboarding. Burn held flat at $58k; runway is 14 months.
+
+**The numbers.**
+- MRR: $42k (+18% MoM) [Stripe]
+- Active customers: 87 (+9 net new) [Stripe]
+- Paid invoices last 30d: $48k collected
+- Commits: 312 across 4 repos [GitHub]
+- PRs merged: 47
+
+**What we shipped.** Onboarding redesign cut TTV from 14min → 4min. New billing portal eliminated 60% of support tickets…`,
+
   workspace: {
     name: "Monthly Update",
     industry: "Startup",
@@ -247,10 +276,262 @@ Voice rules:
   ],
 };
 
+// ----- Engineering Weekly Digest -----
+
+const ENGINEERING_WEEKLY: Recipe = {
+  id: "engineering-weekly",
+  name: "Engineering Weekly Digest",
+  description:
+    "Weekly engineering update for non-engineering leadership. Pulls commits + PRs + releases across all repos, surfaces themes (not chronology), highlights what's blocked. Reduces 'what did engineering do this week' meetings to zero.",
+  category: "engineering",
+  bestFor: "CTOs, eng managers, founders explaining engineering work to investors / sales / board",
+  cadenceLabel: "Every Friday afternoon",
+  connectorsRecommended: [
+    { type: "github", label: "GitHub (multi-repo aggregation)", required: true },
+    { type: "notion", label: "Notion (sprint goals, blockers)" },
+    { type: "mcp", label: "Linear / Jira / Airtable via MCP (optional — ticket status)" },
+  ],
+  exampleOutput: `**This week, engineering shipped onboarding redesign + billing portal v2, with 47 PRs merged across 4 repos.**
+
+**Themes (not chronology):**
+1. *Onboarding velocity.* The redesigned flow (PRs #412, #418, #423) reduced TTV from 14 to 4 minutes…
+2. *Reliability.* Three p99 latency fixes (#430, #434) brought the API 95th percentile from 800ms to 220ms…
+3. *Billing.* Portal v2 (#445) eliminated 60% of support tickets…
+
+**What's blocked.** SOC 2 audit waiting on infrastructure documentation — Sarah owns, ETA Tuesday.`,
+  workspace: {
+    name: "Engineering Weekly",
+    industry: "Internal",
+    brandColor: "#1d4ed8",
+    logoText: "EW",
+  },
+  schedule: {
+    name: "Engineering Friday digest",
+    kind: "newsletter",
+    cadence: "weekly",
+    prompt: `Write the weekly engineering digest for non-engineering leadership (CEO, sales lead, head of customer success). Audience knows the business, doesn't know engineering specifics.
+
+Required structure:
+1. **One-line headline** — the single most important thing engineering shipped this week.
+2. **The numbers** — From the GitHub snapshot. PRs merged, repos touched, contributor count, releases. Cite repo + PR # when material.
+3. **Themes (not chronology)** — 3-5 themed groupings of work. Each theme: one sentence framing + bullet list of specific PRs/commits with their impact translated to business outcome ('cut TTV from 14min to 4min' not 'refactored onboarding state machine').
+4. **What's blocked** — Honest. Naming blockers builds trust. Each blocker: what it is, who owns, ETA.
+5. **What's planned next week** — 3 specific outcomes (not tasks).
+
+Voice rules:
+- Translate engineering work into business outcomes. PRs are evidence, not the story.
+- Group by theme, not by repo or chronology — non-engineers don't have the mental model for either.
+- Blockers are required when they exist. 'Nothing blocked' is allowed only when actually true.
+- 350 words max. This is a digest, not a sprint review.`,
+    recipients: "",
+    deliveryTargets: [],
+  },
+  sampleSources: [
+    {
+      title: "Engineering digest editorial principles",
+      type: "note",
+      content: `Editorial principles for the weekly engineering digest:
+
+- Audience: smart people who don't speak engineering. Translate every PR title into business outcome.
+- Themes > chronology. 'Onboarding velocity' beats 'Monday we did X, Tuesday we did Y'.
+- Specific over general: '47 PRs across 4 repos' beats 'a lot of work'.
+- Cite the PR number once — readers click through if they care, ignore if they don't.
+- Blockers are required when they exist. The week you stop reporting blockers is the week leadership stops trusting the report.
+- 350 words max. Anything longer doesn't get read.`,
+    },
+  ],
+};
+
+// ----- VC Weekly LP Digest -----
+
+const VC_LP_DIGEST: Recipe = {
+  id: "vc-lp-digest",
+  name: "VC Weekly LP Digest",
+  description:
+    "Weekly fund-level digest for LPs. Reads from the deal pipeline + portfolio milestones + sector commentary, synthesizes into a tight LP-facing update. The thing partners write but never on time.",
+  category: "vc",
+  bestFor: "Solo GPs and small VC firms keeping LPs warm between quarterly updates",
+  cadenceLabel: "Every Friday afternoon",
+  connectorsRecommended: [
+    { type: "airtable", label: "Airtable (deal pipeline)", required: true },
+    { type: "notion", label: "Notion (sector intel, meeting notes)" },
+    { type: "url", label: "URLs (relevant news + portfolio company posts)" },
+  ],
+  exampleOutput: `**This week:** Two term sheets out (one signed), three new pilots from portfolio Q1 cohort, India deeptech valuations holding firm against US compression.
+
+**Pipeline.** 14 new pitches reviewed, 3 advanced to second meetings. Strongest signal: enzyme design platform from IIT Bombay group…
+
+**Portfolio milestones.**
+- *Aerogenix* shipped first commercial pilot with ISRO.
+- *Protomer Bio* closed Series A bridge at flat valuation — bridge to $30M Series B in Q3.
+- *Locksmith Bio* missed Q1 milestone; on watchlist…
+
+**Sector signal.** Indian biotech valuations are decoupling from US compression…`,
+  workspace: {
+    name: "LP Digest",
+    industry: "VC LP comms",
+    brandColor: "#7c3aed",
+    logoText: "LP",
+  },
+  schedule: {
+    name: "Weekly LP digest",
+    kind: "newsletter",
+    cadence: "weekly",
+    prompt: `Write the weekly LP digest. Audience: existing LPs who already understand the fund + portfolio. Tone: candid, partner-direct, no fund-marketing voice.
+
+Required structure:
+1. **One-line summary** — most important fund-level signal this week.
+2. **Pipeline** — Numbers from this week's pitches reviewed + advanced. 2-3 sentences on strongest signal (no company names if confidential).
+3. **Portfolio milestones** — 3-5 specific portfolio events. Bullet per company, named, with one-sentence context. Wins AND lowlights — LPs trust GPs who report both.
+4. **Sector signal** — One thread the fund is watching this week. 2-3 sentences max.
+5. **Capital activity** — New commitments, dry powder, reserves. Numbers only when material.
+
+Voice rules:
+- LP-facing voice = partner voice, not associate voice. No fund-marketing phrases ('we're excited to…', 'tremendous opportunity').
+- Named portfolio companies only when public OR with prior LP consent.
+- Lowlights required. 'On watchlist' is a credible phrase.
+- 400 words max. LPs read 30+ digests a week.`,
+    recipients: "",
+    deliveryTargets: [],
+  },
+  sampleSources: [
+    {
+      title: "LP digest editorial principles",
+      type: "note",
+      content: `Editorial principles for the weekly LP digest:
+
+- Partner voice, not associate voice. 'We saw X' / 'we passed because Y' beats 'we're excited about X'.
+- Named portfolio companies require public news OR prior LP consent. When in doubt, anonymize.
+- Lowlights are required, not optional. LPs trust GPs who name miss + bridge needs early.
+- Numbers carry weight: '14 pitches reviewed, 3 advanced' beats 'strong pipeline activity'.
+- 400 words max. LPs receive dozens of weekly digests; brevity respects their time.
+- Sector signal is the differentiator — LPs read every quarterly update. They read your weekly because of your taste.`,
+    },
+  ],
+};
+
+// ----- Marketing Performance Monthly -----
+
+const MARKETING_MONTHLY: Recipe = {
+  id: "marketing-monthly",
+  name: "Marketing Performance Monthly",
+  description:
+    "End-of-month marketing performance report. Pulls site analytics (via URL connector to a Plausible/Umami/PostHog public dashboard), email metrics, and pipeline impact. For solo marketers and small marketing teams.",
+  category: "marketing",
+  bestFor: "Solo marketers + small marketing teams reporting to founders / heads of growth",
+  cadenceLabel: "1st of every month",
+  connectorsRecommended: [
+    { type: "url", label: "URLs (Plausible / PostHog public dashboards, blog post URLs)" },
+    { type: "notion", label: "Notion (campaign notes, copy versions)" },
+    { type: "stripe", label: "Stripe (revenue attribution if you tag UTMs through to subscribe)" },
+  ],
+  exampleOutput: `**Headline:** Organic search drove 62% of qualified signups this month, up from 41% in March — content moat compounding.
+
+**Traffic.** 38k uniques (+21% MoM). Top channels: organic (62%) → direct (18%) → referral (12%) → social (8%).
+
+**Content.** 4 posts published, top performer 'The Obsidian-of-CRM thesis' drove 8.4k uniques + 312 newsletter signups…
+
+**Funnel.**
+- Site → newsletter: 4.1% (from 3.2% last month — landing page test winning)
+- Newsletter → trial: 12% (flat)
+- Trial → paid: 18% (from 14% — onboarding redesign helping)
+
+**Spend.** $0 paid this month. CAC payback for organic-attributed = 2.4 months.
+
+**Next month.** Triple down on the thesis-essay format that's working. Test newsletter referral incentive.`,
+  workspace: {
+    name: "Marketing Monthly",
+    industry: "Marketing",
+    brandColor: "#dc2626",
+    logoText: "MM",
+  },
+  schedule: {
+    name: "Monthly marketing report",
+    kind: "newsletter",
+    cadence: "monthly",
+    prompt: `Write the monthly marketing performance report. Audience: founder + small marketing team. Tone: candid analyst, not promotional.
+
+Required structure:
+1. **Headline** — Single most important marketing signal this month, framed as a directional change.
+2. **Traffic** — Sources, deltas, where attention is coming from. Cite the analytics source.
+3. **Content** — What got published, what performed, top piece by attribution. 1-2 sentences per top piece.
+4. **Funnel** — Site → newsletter → trial → paid conversion rates with month-over-month deltas.
+5. **Spend** — What was spent, on what, with CAC + payback if computable. Be specific.
+6. **What's working / what's not** — 2 short paragraphs. Equal weight.
+7. **Next month** — 2-3 specific experiments planned.
+
+Voice rules:
+- Numbers first. Every claim cites a source.
+- Directional language: 'organic share rose from 41% to 62%' beats 'organic is doing well'.
+- 'What's not working' is required. Marketing reports that only show wins teach leadership nothing.
+- 500 words max.`,
+    recipients: "",
+    deliveryTargets: [],
+  },
+};
+
+// ----- Open Source Maintainer Update -----
+
+const OSS_MAINTAINER_UPDATE: Recipe = {
+  id: "oss-maintainer-update",
+  name: "Open Source Maintainer Update",
+  description:
+    "Monthly update for an OSS project's community. Stars + contributors + releases + community signals. For maintainers explaining what shipped + asking for sponsorship without it feeling like begging.",
+  category: "oss",
+  bestFor: "OSS maintainers running GitHub Sponsors / Open Collective / Polar",
+  cadenceLabel: "1st of every month",
+  connectorsRecommended: [
+    { type: "github", label: "GitHub (stars + commits + contributors + releases)", required: true },
+    { type: "url", label: "URLs (blog posts, discussion threads, sponsor pages)" },
+  ],
+  exampleOutput: `**February in one line:** Shipped v2.0 with the long-promised plugin API, jumped to 14k stars, 23 new contributors landed PRs.
+
+**By the numbers.** ⭐ 14,247 (+1,840 this month) · 312 commits · 47 PRs merged · 23 first-time contributors · 4 releases (v2.0 + 3 patches).
+
+**v2.0 ships.** The plugin API is now stable. Six community plugins already published…
+
+**Community moments.**
+- A high school student in São Paulo built a Spanish-language plugin marketplace…
+- Maintainer of competing project asked to merge…
+
+**How you can help.** Three open issues need a Rust expert (#412, #418, #423). Sponsorship at $5/mo from anyone using this commercially keeps maintenance time funded.`,
+  workspace: {
+    name: "OSS Maintainer",
+    industry: "Open source",
+    brandColor: "#059669",
+    logoText: "OS",
+  },
+  schedule: {
+    name: "Monthly OSS update",
+    kind: "newsletter",
+    cadence: "monthly",
+    prompt: `Write the monthly OSS maintainer update. Audience: contributors, sponsors, users, prospective contributors. Tone: warm but specific, no marketing speak.
+
+Required structure:
+1. **One-line month summary.**
+2. **By the numbers** — From GitHub snapshot. Stars + delta, commits, PRs merged, contributors (named when material), releases shipped.
+3. **What shipped** — Notable features/fixes. Cite PR # for each. Translate from changelog to user value.
+4. **Community moments** — Specific named contributions or moments. Often the most-read section. New contributor stories, surprising use cases.
+5. **How you can help** — 3 concrete asks (which issues need help, what kind of sponsorship matters). Never beg.
+
+Voice rules:
+- Specific named contributors > generic 'thanks to our community'. Recognition compounds.
+- 'How you can help' must be concrete. 'Sponsor at $5/mo' beats 'consider supporting us'.
+- Translate changelog → user impact. 'Fixed memory leak in worker pool' becomes 'long-running scripts no longer eat 4GB by hour 6'.
+- 600 words max.`,
+    recipients: "",
+    deliveryTargets: [],
+  },
+};
+
 // ----- Registry -----
 
 export const RECIPES: Recipe[] = [
   FOUNDER_MONTHLY_UPDATE,
+  ENGINEERING_WEEKLY,
+  VC_LP_DIGEST,
+  MARKETING_MONTHLY,
+  OSS_MAINTAINER_UPDATE,
   ATOMS_AND_CELLS,
   IC_MEMO_TEMPLATE,
   QUARTERLY_PORTFOLIO,

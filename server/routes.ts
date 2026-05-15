@@ -601,6 +601,10 @@ export async function registerRoutes(
         name: r.name,
         description: r.description,
         category: r.category,
+        bestFor: r.bestFor ?? null,
+        cadenceLabel: r.cadenceLabel ?? null,
+        connectorsRecommended: r.connectorsRecommended ?? [],
+        exampleOutput: r.exampleOutput ?? null,
         creates: {
           workspace: r.workspace.name,
           template: r.template?.name ?? null,

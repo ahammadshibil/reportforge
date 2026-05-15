@@ -555,6 +555,16 @@ export type InstallResult = {
 export function installRecipe(recipeId: string): InstallResult {
   const recipe = getRecipe(recipeId);
   if (!recipe) throw new Error(`unknown_recipe: ${recipeId}`);
+  return installRecipeObject(recipe);
+}
+
+// Install any Recipe-shaped object. Used by both the built-in catalog
+// (installRecipe → getRecipe → this) AND user-imported recipe.json files
+// (POST /api/recipes/import → this).
+export function installRecipeObject(recipe: Recipe): InstallResult {
+  if (!recipe?.workspace?.name) {
+    throw new Error("invalid_recipe: missing workspace.name");
+  }
 
   // Find or create workspace by name (so re-install doesn't dupe).
   const existing = storage
@@ -640,4 +650,129 @@ export function installRecipe(recipeId: string): InstallResult {
     scheduleId,
     sourceIds,
   };
+}
+
+// ----- Export -----
+//
+// Walk a workspace and serialize its current state as a Recipe JSON.
+// Caller decides what to include (template, schedule, sources, and which
+// specific sources). The returned shape is exactly the same as a built-in
+// Recipe, so it round-trips through installRecipeObject without any
+// translation layer.
+
+export type ExportOpts = {
+  includeTemplate?: boolean;     // include first template found, default true
+  includeSchedule?: boolean;     // include first schedule found, default true
+  includeSources?: boolean;      // include sources, default true
+  sourceIds?: number[];          // when set, only these source ids — else all
+  meta?: {
+    id?: string;
+    name?: string;
+    description?: string;
+    category?: Recipe["category"];
+    bestFor?: string;
+    cadenceLabel?: string;
+    exampleOutput?: string;
+    connectorsRecommended?: Recipe["connectorsRecommended"];
+  };
+};
+
+export function exportWorkspaceAsRecipe(
+  workspaceId: number,
+  opts: ExportOpts = {}
+): Recipe {
+  const ws = storage.getWorkspace(workspaceId);
+  if (!ws) throw new Error("workspace_not_found");
+
+  const includeTemplate = opts.includeTemplate !== false;
+  const includeSchedule = opts.includeSchedule !== false;
+  const includeSources = opts.includeSources !== false;
+
+  // Pick first template and first schedule (most workspaces have one of each
+  // when used recipe-style). UI can be extended later to pick specific rows.
+  const templates = storage.listTemplates(workspaceId);
+  const schedules = storage.listSchedules(workspaceId);
+  const allSources = storage.listSources(workspaceId);
+  const sources = opts.sourceIds
+    ? allSources.filter((s) => opts.sourceIds!.includes(s.id))
+    : allSources;
+
+  const recipeId =
+    opts.meta?.id ||
+    ws.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") +
+      "-" +
+      Math.random().toString(36).slice(2, 6);
+
+  const recipe: Recipe = {
+    id: recipeId,
+    name: opts.meta?.name || `${ws.name} recipe`,
+    description:
+      opts.meta?.description ||
+      `Recipe exported from ${ws.name} on ${new Date().toISOString().slice(0, 10)}.`,
+    category: opts.meta?.category || "general",
+    bestFor: opts.meta?.bestFor,
+    cadenceLabel: opts.meta?.cadenceLabel,
+    connectorsRecommended: opts.meta?.connectorsRecommended,
+    exampleOutput: opts.meta?.exampleOutput,
+    workspace: {
+      name: ws.name,
+      industry: ws.industry || undefined,
+      brandColor: ws.brandColor || undefined,
+      logoText: ws.logoText || undefined,
+    },
+  };
+
+  if (includeTemplate && templates[0]) {
+    const t = templates[0];
+    try {
+      const schema = JSON.parse(t.schema) as TemplateSchema;
+      recipe.template = {
+        name: t.name,
+        kind: (t.kind as any) || "other",
+        schema,
+      };
+    } catch {
+      // skip a template whose schema doesn't parse
+    }
+  }
+
+  if (includeSchedule && schedules[0]) {
+    const s = schedules[0];
+    let deliveryTargets: any[] | undefined;
+    try {
+      deliveryTargets = s.deliveryTargets ? JSON.parse(s.deliveryTargets) : undefined;
+    } catch {
+      deliveryTargets = undefined;
+    }
+    // Strip connectionId from vault/substack targets — they're local to the
+    // exporting deploy and won't make sense on import. Tool name + path
+    // template survive (importer re-wires connectionId after install).
+    if (deliveryTargets) {
+      deliveryTargets = deliveryTargets.map((t: any) => {
+        if (t?.type === "vault" || t?.type === "substack") {
+          const { connectionId: _drop, ...rest } = t;
+          return rest;
+        }
+        return t;
+      });
+    }
+    recipe.schedule = {
+      name: s.name,
+      kind: s.kind as any,
+      cadence: s.cadence as any,
+      prompt: s.prompt,
+      recipients: s.recipients || undefined,
+      deliveryTargets,
+    };
+  }
+
+  if (includeSources && sources.length > 0) {
+    recipe.sampleSources = sources.map((s) => ({
+      title: s.title,
+      type: (["note", "pdf", "csv", "url"].includes(s.type) ? s.type : "note") as any,
+      content: s.content,
+    }));
+  }
+
+  return recipe;
 }

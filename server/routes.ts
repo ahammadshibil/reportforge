@@ -624,6 +624,66 @@ export async function registerRoutes(
     }
   });
 
+  // Export a workspace as a Recipe JSON. Body shape:
+  //   {
+  //     workspaceId: number,
+  //     includeTemplate?: bool, includeSchedule?: bool, includeSources?: bool,
+  //     sourceIds?: number[],
+  //     meta?: { id, name, description, category, bestFor, cadenceLabel, exampleOutput, connectorsRecommended }
+  //   }
+  // Returns the Recipe object — caller downloads it as recipe.json.
+  app.post("/api/recipes/export", guard, async (req, res) => {
+    try {
+      const { exportWorkspaceAsRecipe } = await import("./recipes");
+      const workspaceId = Number(req.body?.workspaceId);
+      if (!workspaceId) return res.status(400).json({ error: "workspaceId required" });
+      const recipe = exportWorkspaceAsRecipe(workspaceId, {
+        includeTemplate: req.body?.includeTemplate,
+        includeSchedule: req.body?.includeSchedule,
+        includeSources: req.body?.includeSources,
+        sourceIds: Array.isArray(req.body?.sourceIds) ? req.body.sourceIds : undefined,
+        meta: req.body?.meta,
+      });
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${recipe.id || "recipe"}.byor.json"`
+      );
+      res.setHeader("Content-Type", "application/json");
+      res.send(JSON.stringify(recipe, null, 2));
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message ?? "export_failed" });
+    }
+  });
+
+  // Import a recipe.json (the body IS the recipe, not a wrapper).
+  // Performs basic shape validation then runs installRecipeObject —
+  // identical install semantics to the built-in catalog.
+  app.post("/api/recipes/import", guard, async (req, res) => {
+    try {
+      const { installRecipeObject } = await import("./recipes");
+      const recipe = req.body;
+      if (!recipe || typeof recipe !== "object") {
+        return res.status(400).json({ error: "recipe_must_be_object" });
+      }
+      if (!recipe.workspace?.name || typeof recipe.workspace.name !== "string") {
+        return res.status(400).json({ error: "recipe.workspace.name required" });
+      }
+      // Allow common Recipe-shaped JSONs even when id/name/category missing —
+      // fill in defaults so users can paste partial files.
+      const normalized = {
+        id: recipe.id || "imported-" + Date.now().toString(36),
+        name: recipe.name || recipe.workspace.name,
+        description: recipe.description || "Imported recipe",
+        category: recipe.category || "general",
+        ...recipe,
+      };
+      const result = installRecipeObject(normalized);
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message ?? "import_failed" });
+    }
+  });
+
   // ----- Templates -----
   app.get("/api/workspaces/:id/templates", guard, (req, res) => {
     res.json(storage.listTemplates(Number(req.params.id)));

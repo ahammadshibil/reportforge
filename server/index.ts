@@ -41,6 +41,9 @@ declare module "http" {
 
 app.use(
   express.json({
+    // Bigger than the default 100kb — recipe JSONs with embedded sources +
+    // base64 image uploads (template extraction) can easily exceed that.
+    limit: "25mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },

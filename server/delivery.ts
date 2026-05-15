@@ -199,7 +199,12 @@ async function deliverVault(
     { title: ctx.title, kind: ctx.kind }
   );
   const content = t.format === "html" ? ctx.htmlBody : ctx.markdownBody;
+  // Broadcast common arg shapes used by different MCP write tools.
+  // The MCP server picks the one its tool actually expects — extras are
+  // tolerated by most servers (cyanheads/obsidian-mcp-server in particular
+  // requires `target: {type:'path', path}`; others use `filepath` or `path`).
   const args: Record<string, unknown> = {
+    target: { type: "path", path },
     filepath: path,
     path,
     filename: path,

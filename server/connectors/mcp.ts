@@ -73,7 +73,9 @@ async function safeClose(client: Client) {
 
 // Direct tool-call helper for use outside the connector's list/fetch
 // surface — e.g. writing a generated asset back to an Obsidian vault.
-// Returns the raw tool result; callers extract what they need.
+// Throws on protocol errors AND when the MCP returns isError=true so
+// silent tool failures surface to the caller instead of being treated
+// as success. Returns the raw tool result on success.
 export async function mcpCallTool(
   connection: import("@shared/schema").Connection,
   toolName: string,
@@ -82,7 +84,12 @@ export async function mcpCallTool(
   const cfg = readConfig<McpConfig>(connection);
   const client = await connectClient(cfg);
   try {
-    return await client.callTool({ name: toolName, arguments: args });
+    const result: any = await client.callTool({ name: toolName, arguments: args });
+    if (result?.isError) {
+      const reason = extractContent(result?.content) || `tool_error:${toolName}`;
+      throw new Error(reason.slice(0, 600));
+    }
+    return result;
   } finally {
     await safeClose(client);
   }

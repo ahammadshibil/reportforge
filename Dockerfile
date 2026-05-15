@@ -52,7 +52,14 @@ COPY --from=build /app/dist ./dist
 RUN mkdir -p /data /home/node/.cache /home/node/.npm \
   && chown -R node:node /data /app /home/node
 
-USER node
+# Note on user: we run as root in the container. Reason: managed-runtime
+# volume mounts (Railway, Fly, Render) typically attach the volume as
+# root-owned, overriding any build-time chown. A non-root container then
+# can't write data.db. The isolation boundary in these environments is
+# the container itself, not the in-container user — so root is correct
+# here. (For air-gapped self-host with USER node working, you'd add an
+# entrypoint script that chowns /data at startup, but that's deferred
+# until needed.)
 
 # Pre-warm the npm cache for common npx-spawned MCPs so the first connect
 # doesn't time out. Best-effort — failures here don't break the build.

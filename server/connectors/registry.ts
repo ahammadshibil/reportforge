@@ -4,6 +4,8 @@ import { notion } from "./notion";
 import { airtable } from "./airtable";
 import { urlConnector } from "./url";
 import { mcpConnector } from "./mcp";
+import { stripe } from "./stripe";
+import { github } from "./github";
 
 const REGISTRY: Record<string, Connector> = {
   google_drive: googleDrive,
@@ -11,6 +13,8 @@ const REGISTRY: Record<string, Connector> = {
   airtable: airtable,
   url: urlConnector,
   mcp: mcpConnector,
+  stripe: stripe,
+  github: github,
 };
 
 const ENV_REQ: Record<string, string[]> = {
@@ -19,6 +23,8 @@ const ENV_REQ: Record<string, string[]> = {
   airtable: [],
   url: [],
   mcp: [], // each MCP server is configured per-connection (presets supply defaults)
+  stripe: [],
+  github: [],
 };
 
 export function getConnector(id: string): Connector | undefined {
@@ -38,6 +44,8 @@ export function listConnectorTypes(): Array<{
     airtable: "Read records from Airtable bases (PAT).",
     url: "Fetch + strip web URLs as plain-text sources.",
     mcp: "Any MCP server — Colab, Notion, Perplexity, Jupyter, Obsidian, …",
+    stripe: "MRR, customers, revenue, churn — pre-computed for monthly updates.",
+    github: "Commits, PRs, releases, stars across your repos — engineering snapshot.",
   };
   return Object.values(REGISTRY).map((c) => {
     const need = ENV_REQ[c.id] || [];

@@ -185,9 +185,72 @@ Write only what the sources support. Cite every quantitative claim.`,
   },
 };
 
+// ----- Founder Monthly Investor Update -----
+
+const FOUNDER_MONTHLY_UPDATE: Recipe = {
+  id: "founder-monthly-update",
+  name: "Founder Monthly Update",
+  description:
+    "End-of-month investor update. Pulls live numbers from Stripe + GitHub via connectors, synthesizes a structured update with TL;DR, KPIs, ship log, hires, asks. Wire it once, fire on the 28th forever.",
+  category: "general",
+  workspace: {
+    name: "Monthly Update",
+    industry: "Startup",
+    brandColor: "#1d4ed8",
+    logoText: "MU",
+  },
+  schedule: {
+    name: "Monthly investor update",
+    kind: "newsletter",
+    cadence: "monthly",
+    prompt: `Write the monthly investor update. Audience: existing investors who already understand the business. Tone: candid, specific, no hype.
+
+Required structure (use these exact section headings):
+
+1. **TL;DR** — 3 sentences. The single most important signal, the headline metric direction, the one thing on the team's mind.
+2. **The numbers** — Pull from the Stripe + GitHub snapshot sources. MRR + month-over-month change, customer count + delta, revenue last 30 days, runway (if mentioned in sources). Use exact figures with cited sources.
+3. **What we shipped** — From the GitHub snapshot. Group by theme (not chronology). Cite repo + PR # when material.
+4. **Team** — Hires, departures, key role openings. Only if material this month — otherwise omit the section entirely.
+5. **Wins** — 2-4 specific wins. Customer logo names where allowed, deal sizes where appropriate, product milestones.
+6. **Lowlights** — Things that didn't go well. Include even when uncomfortable — credibility compounds.
+7. **Asks** — Specific intros, hires, or feedback. Each ask should be concrete enough that an investor could act on it in one reply.
+
+Voice rules:
+- Numbers first, narrative second.
+- Cite every quantitative claim to its source.
+- Lowlights are required, not optional. Investors trust founders who name them.
+- Replace 'we're seeing X' with 'X happened — here's what we did'.
+- Maximum 600 words total. Investors skim.`,
+    recipients: "",
+    deliveryTargets: [
+      // User wires connectionIds post-install via Schedules UI
+      // Example shape (commented out — uncomment in UI):
+      // { type: "email", recipients: "lead@vc.com, board@vc.com" }
+    ],
+  },
+  sampleSources: [
+    {
+      title: "Monthly update editorial principles",
+      type: "note",
+      content: `Editorial principles for monthly investor updates (apply every month):
+
+- Numbers first. Every quantitative claim cites the snapshot it came from.
+- Lowlights are required, not optional. They build credibility faster than wins do.
+- Specific over general: "Acme Corp signed at \$2k MRR" beats "we landed a logo".
+- Asks should be actionable in one reply. Vague "we'd love intros to anyone in retail" gets ignored; "we're looking for an intro to a CFO at a Series B+ vertical SaaS company in payments" gets responses.
+- 600 words max. Investors skim. Lead with the headline metric.
+- No hype words: 'tremendous', 'incredible', 'unprecedented'. Replace with the actual number.
+- Show momentum direction even when the absolute number is small: "MRR grew 18% to \$12k" beats "MRR is \$12k".
+- Track the same metrics every month. Investors notice when you stop reporting one.
+- The TL;DR is three sentences. Not four. Not two.`,
+    },
+  ],
+};
+
 // ----- Registry -----
 
 export const RECIPES: Recipe[] = [
+  FOUNDER_MONTHLY_UPDATE,
   ATOMS_AND_CELLS,
   IC_MEMO_TEMPLATE,
   QUARTERLY_PORTFOLIO,

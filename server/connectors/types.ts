@@ -10,7 +10,9 @@ export type ConnectorId =
   | "notion"
   | "airtable"
   | "url"
-  | "mcp";
+  | "mcp"
+  | "stripe"
+  | "github";
 
 export type ConnectorListItem = {
   externalId: string;

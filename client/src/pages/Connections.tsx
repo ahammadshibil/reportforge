@@ -279,6 +279,11 @@ function KeyDialog({
       if (type.id === "airtable") {
         body.apiKey = apiKey;
         if (baseId) body.baseId = baseId;
+      } else if (type.id === "stripe") {
+        body.apiKey = apiKey;
+      } else if (type.id === "github") {
+        body.apiKey = apiKey;
+        if (urls) body.repos = urls; // reuse the textarea state for repo list
       } else if (type.id === "url") {
         body.urls = urls;
         if (name) body.name = name;
@@ -326,6 +331,59 @@ function KeyDialog({
         <DialogHeader>
           <DialogTitle>Connect {type?.label}</DialogTitle>
         </DialogHeader>
+        {type?.id === "stripe" && (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="stripe-key">Stripe Restricted API Key</Label>
+              <Input
+                id="stripe-key"
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="rk_live_... or sk_test_..."
+                data-testid="input-stripe-key"
+              />
+              <p className="text-xs text-muted-foreground">
+                Create at <code>dashboard.stripe.com/apikeys</code> → Create restricted key.
+                Required permissions: <code>customers</code>, <code>subscriptions</code>,{" "}
+                <code>invoices</code>, <code>balance</code>, <code>charges</code> (all Read-only).
+              </p>
+            </div>
+          </div>
+        )}
+        {type?.id === "github" && (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="github-key">GitHub Personal Access Token</Label>
+              <Input
+                id="github-key"
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="ghp_..."
+                data-testid="input-github-key"
+              />
+              <p className="text-xs text-muted-foreground">
+                Generate at <code>github.com/settings/tokens</code>. For public repos:
+                no scopes needed. For private: <code>repo</code> scope.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="github-repos">Repos (comma-separated)</Label>
+              <Textarea
+                id="github-repos"
+                value={urls}
+                onChange={(e) => setUrls(e.target.value)}
+                placeholder={"acme/api, acme/web, acme/infra"}
+                rows={2}
+                data-testid="input-github-repos"
+              />
+              <p className="text-xs text-muted-foreground">
+                Format: <code>owner/repo</code>, comma- or space-separated. Aggregates commits + PRs + releases across all listed repos.
+              </p>
+            </div>
+          </div>
+        )}
         {type?.id === "airtable" && (
           <div className="space-y-4">
             <div className="space-y-1.5">

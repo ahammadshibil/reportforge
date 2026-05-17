@@ -24,7 +24,12 @@ import { eq, lt, and } from "drizzle-orm";
 const DAY = 24 * 60 * 60 * 1000;
 
 function envInt(name: string, def: number): number {
-  const v = Number(process.env[name] ?? "");
+  const raw = process.env[name];
+  // Empty / unset / whitespace → use default. (Number("") is 0, which would
+  // silently turn every TTL knob into 'delete everything immediately' — a
+  // real bug caught during the 12-test functional sweep.)
+  if (raw === undefined || raw === null || String(raw).trim() === "") return def;
+  const v = Number(raw);
   return Number.isFinite(v) && v >= 0 ? v : def;
 }
 

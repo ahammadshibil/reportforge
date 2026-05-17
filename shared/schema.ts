@@ -2,6 +2,16 @@ import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Tenant-level overrides for env-driven settings. One row per key.
+// Currently used for brand fields (name, color, logo, footer, etc) so a
+// per-tenant Railway deploy can change its identity without an env-var
+// edit + restart. Falls back to env at read time when a key isn't set.
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 // Companies / workspaces
 export const workspaces = sqliteTable("workspaces", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -144,6 +154,7 @@ export type Template = typeof templates.$inferSelect;
 export type InsertTemplate = z.infer<typeof insertTemplateSchema>;
 export type AssetVersion = typeof assetVersions.$inferSelect;
 export type InsertAssetVersion = z.infer<typeof insertAssetVersionSchema>;
+export type AppSetting = typeof appSettings.$inferSelect;
 export type Asset = typeof assets.$inferSelect;
 export type InsertAsset = z.infer<typeof insertAssetSchema>;
 export type Schedule = typeof schedules.$inferSelect;

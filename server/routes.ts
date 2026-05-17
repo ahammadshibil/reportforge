@@ -347,6 +347,34 @@ export async function registerRoutes(
     res.json({ configured: emailConfigured() });
   });
 
+  // ----- Tenant settings (brand) -----
+  // GET returns the merged brand (DB override → env → defaults) so the
+  // settings UI can populate the form correctly.
+  app.get("/api/admin/brand", guard, (_req, res) => {
+    res.json(getBrand());
+  });
+  // PATCH writes selected brand fields to the app_settings table. Keys that
+  // map to brand fields: name, tagline, color, logoUrl, logoText, domain,
+  // footer, supportEmail, theme. Send only the keys you're changing.
+  app.patch("/api/admin/brand", guard, (req, res) => {
+    const allowed = new Set([
+      "name", "tagline", "color", "logoUrl", "logoText",
+      "domain", "footer", "supportEmail", "theme",
+    ]);
+    const body = req.body ?? {};
+    let updated = 0;
+    for (const [k, v] of Object.entries(body)) {
+      if (!allowed.has(k)) continue;
+      if (v === null || v === undefined || v === "") {
+        storage.deleteSetting(`brand.${k}`);
+      } else {
+        storage.setSetting(`brand.${k}`, String(v));
+      }
+      updated++;
+    }
+    res.json({ updated, brand: getBrand() });
+  });
+
   // ----- Asset versions -----
   app.get("/api/assets/:id/versions", guard, (req, res) => {
     const versions = storage.listAssetVersions(Number(req.params.id));

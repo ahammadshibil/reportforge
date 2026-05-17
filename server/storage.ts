@@ -6,6 +6,7 @@ import {
   connections,
   templates,
   assetVersions,
+  appSettings,
 } from "@shared/schema";
 import type {
   Workspace,
@@ -116,6 +117,11 @@ CREATE TABLE IF NOT EXISTS asset_versions (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_asset_versions_asset ON asset_versions(asset_id);
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `);
 
 // Additive migrations — safe to run repeatedly. Each ALTER is wrapped so
@@ -178,6 +184,10 @@ export interface IStorage {
   getAssetVersion(versionId: number): AssetVersion | undefined;
   createAssetVersion(v: InsertAssetVersion): AssetVersion;
   countAssetVersions(assetId: number): number;
+  // App settings (key/value)
+  getAllSettings(): Record<string, string>;
+  setSetting(key: string, value: string): void;
+  deleteSetting(key: string): void;
 }
 
 class DatabaseStorage implements IStorage {
@@ -367,6 +377,25 @@ class DatabaseStorage implements IStorage {
   }
   countAssetVersions(assetId: number) {
     return this.listAssetVersions(assetId).length;
+  }
+
+  getAllSettings(): Record<string, string> {
+    const rows = db.select().from(appSettings).all();
+    const out: Record<string, string> = {};
+    for (const r of rows) out[r.key] = r.value;
+    return out;
+  }
+  setSetting(key: string, value: string): void {
+    db.insert(appSettings)
+      .values({ key, value, updatedAt: Date.now() })
+      .onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value, updatedAt: Date.now() },
+      })
+      .run();
+  }
+  deleteSetting(key: string): void {
+    db.delete(appSettings).where(eq(appSettings.key, key)).run();
   }
 }
 

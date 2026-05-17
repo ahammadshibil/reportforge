@@ -150,8 +150,168 @@ export default function Settings() {
         </div>
       </Card>
 
+      <BrandCard />
+
       <LlmCard />
     </div>
+  );
+}
+
+// ---- Tenant brand editor (writes to app_settings DB) ----
+
+type BrandState = {
+  name: string;
+  tagline: string;
+  color: string;
+  logoUrl: string;
+  logoText: string;
+  domain: string;
+  footer: string;
+  supportEmail: string;
+  theme: "light" | "dark" | "auto";
+};
+
+function BrandCard() {
+  const { toast } = useToast();
+  const { data: current } = useQuery<BrandState>({
+    queryKey: ["/api/admin/brand"],
+  });
+  const [draft, setDraft] = useState<BrandState | null>(null);
+
+  // Seed local draft when current arrives
+  useEffect(() => {
+    if (current && !draft) {
+      setDraft({
+        name: current.name ?? "",
+        tagline: current.tagline ?? "",
+        color: current.color ?? "#0f766e",
+        logoUrl: current.logoUrl ?? "",
+        logoText: current.logoText ?? "",
+        domain: current.domain ?? "",
+        footer: current.footer ?? "",
+        supportEmail: current.supportEmail ?? "",
+        theme: (current.theme as any) ?? "auto",
+      });
+    }
+  }, [current, draft]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!draft) return;
+      await apiRequest("PATCH", "/api/admin/brand", draft);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/brand"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/brand"] });
+      toast({ title: "Brand updated", description: "Refresh to see the new look." });
+    },
+    onError: (e: any) => {
+      toast({ title: "Save failed", description: e?.message ?? "" });
+    },
+  });
+
+  if (!draft) {
+    return (
+      <Card className="p-6 mt-4">
+        <div className="text-sm text-muted-foreground">Loading brand…</div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="p-6 mt-4 space-y-4">
+      <div>
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
+          Tenant branding
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Override the env-driven brand from here. Useful when one BYOR deploy is
+          handed off to a customer — they rebrand without touching env vars.
+        </p>
+      </div>
+
+      <div>
+        <Label>App name</Label>
+        <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+      </div>
+
+      <div>
+        <Label>Tagline</Label>
+        <Input
+          value={draft.tagline}
+          onChange={(e) => setDraft({ ...draft, tagline: e.target.value })}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label>Brand color</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="color"
+              value={draft.color || "#0f766e"}
+              onChange={(e) => setDraft({ ...draft, color: e.target.value })}
+              className="h-10 w-20 p-1"
+            />
+            <Input
+              value={draft.color}
+              onChange={(e) => setDraft({ ...draft, color: e.target.value })}
+              className="flex-1"
+            />
+          </div>
+        </div>
+        <div>
+          <Label>Logo text (initials)</Label>
+          <Input
+            value={draft.logoText}
+            onChange={(e) => setDraft({ ...draft, logoText: e.target.value.slice(0, 3) })}
+            maxLength={3}
+          />
+        </div>
+      </div>
+
+      <div>
+        <Label>Logo URL (optional — overrides initials)</Label>
+        <Input
+          value={draft.logoUrl}
+          onChange={(e) => setDraft({ ...draft, logoUrl: e.target.value })}
+          placeholder="https://yourdomain.com/logo.png"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label>Email-from domain</Label>
+          <Input
+            value={draft.domain}
+            onChange={(e) => setDraft({ ...draft, domain: e.target.value })}
+            placeholder="reports.yourdomain.com"
+          />
+        </div>
+        <div>
+          <Label>Support email</Label>
+          <Input
+            value={draft.supportEmail}
+            onChange={(e) => setDraft({ ...draft, supportEmail: e.target.value })}
+            placeholder="support@yourdomain.com"
+          />
+        </div>
+      </div>
+
+      <div>
+        <Label>Email footer</Label>
+        <Input
+          value={draft.footer}
+          onChange={(e) => setDraft({ ...draft, footer: e.target.value })}
+        />
+      </div>
+
+      <div className="flex justify-end pt-2">
+        <Button onClick={() => save.mutate()} disabled={save.isPending}>
+          {save.isPending ? "Saving…" : "Save brand"}
+        </Button>
+      </div>
+    </Card>
   );
 }
 

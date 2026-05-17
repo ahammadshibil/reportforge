@@ -1,144 +1,188 @@
+<div align="center">
+
 # BYOR — Build Your Own Report
 
-> Whitelabel autonomous reporting dashboard for any team, anywhere. Bring your own LLM key, bring your own data sources, brand the deploy in one .env file. Generates **PDFs**, **PPTX decks**, and **email-safe HTML newsletters** from sources or vision-extracted **templates**.
->
-> Codebase is `reportforge` (the engine); product is BYOR. Both names work.
+**The open-source autopilot for recurring reports & newsletters.**
 
-> **Status.** All five build phases shipped — whitelabel branding, auth, connectors (Google Drive / Notion / Airtable / URLs), multi-provider LLM synthesis, autonomous scheduler, email delivery, direct PDF/CSV/URL ingestion. **Plus**: vision-LLM **Templates** — upload any branded document image, extract a fillable schema, generate matching output. See [Roadmap](#roadmap).
+Monthly investor updates · Weekly LP digests · Engineering rollups · Bio newsletters · IC memos · Quarterly portfolio updates · Anything you write on a cadence.
 
-## Quick Start
+An open-source alternative to: **Notion** · **Beehiiv** · **Substack** · **HubSpot** · **Mailchimp**
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy?template=https://github.com/ahammadshibil/reportforge)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/ahammadshibil/reportforge?style=social)](https://github.com/ahammadshibil/reportforge)
+
+[Live demo](https://byor-shibil-production.up.railway.app) · [Recipes](#-recipes) · [Self-host in 30 seconds](#-self-host-in-30-seconds) · [Pricing](#-pricing) · [Build in public](#-build-in-public)
+
+</div>
+
+---
+
+## What BYOR does
+
+You write a recurring report. BYOR writes the first draft.
+
+```
+   Stripe / GitHub / Notion / Airtable / Obsidian / any MCP   →
+       LLM synthesizes with citations    →
+           branded PDF / HTML / PPTX     →
+               email + Substack + Obsidian vault + webhook
+```
+
+Pick a recipe (founder monthly update, weekly LP digest, A&C-style newsletter). Connect your data sources. Schedule it. Every month/week/Friday a draft lands — cited, branded, ready for your editorial pass. You spend time on judgment, not on gathering-and-formatting.
+
+---
+
+## How BYOR compares
+
+| | BYOR | Notion | Beehiiv | Substack | HubSpot |
+|---|---|---|---|---|---|
+| **Open source** | ✅ MIT | ❌ | ❌ | ❌ | ❌ |
+| **Self-host free** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Bring your own LLM key** | ✅ Anthropic / OpenAI / Gemini / Perplexity / any | ❌ proprietary | ❌ proprietary | ❌ no AI | ❌ paid AI tier |
+| **Auto-pull data from sources** | ✅ Stripe / GitHub / Notion / Airtable / URL / MCP | ❌ manual | ❌ manual | ❌ manual | ⚠️ CRM only |
+| **Cited claims** | ✅ source-ref footnotes | ❌ | ❌ | ❌ | ❌ |
+| **Scheduled autonomous delivery** | ✅ email + vault + Substack + webhook | ❌ | ⚠️ post-only | ⚠️ post-only | ⚠️ email only |
+| **Per-recipient personalization** | ✅ `{{firstName}}` | ❌ | ✅ | ⚠️ tiers | ✅ |
+| **Recipes / templates marketplace** | ✅ import/export `recipe.byor.json` | ⚠️ | ✅ paid | ❌ | ⚠️ |
+| **Cloud option** | $29-99/mo | $10-25/seat | $49+/mo | 10% rev share | $45-1200/seat |
+
+---
+
+## 🍳 Recipes
+
+8 recipes ship today. Each one is a pre-baked workflow you install with one click → connect data → schedule.
+
+| Recipe | Best for | Cadence | Connectors |
+|---|---|---|---|
+| **Founder Monthly Update** | YC / seed / Series A founders | End of every month | Stripe + GitHub |
+| **VC Weekly LP Digest** | Solo GPs and small VCs | Friday afternoon | Airtable + Notion |
+| **Engineering Weekly Digest** | CTOs explaining work to non-eng leadership | Every Friday | GitHub |
+| **Marketing Performance Monthly** | Solo marketers + small teams | 1st of every month | URL + Notion |
+| **Open Source Maintainer Update** | OSS maintainers w/ Sponsors / Open Collective | 1st of every month | GitHub |
+| **Atoms & Cells weekly** | Bio newsletter writers | Every Monday | Obsidian + Notion |
+| **IC Memo** | VC investment committees | One-shot per deal | Any |
+| **Quarterly Portfolio Update** | VC firms writing LP-facing quarterlies | Quarterly | Airtable |
+
+Recipes are exportable as `recipe.byor.json` — share them, fork them, contribute new ones via PR. The library grows with the community.
+
+---
+
+## ⚡ Self-host in 30 seconds
+
+### Option 1 — Railway (one click)
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy?template=https://github.com/ahammadshibil/reportforge)
+
+Sets up: `Dockerfile` build, 1GB volume, public domain, all on Railway's free tier.
+
+### Option 2 — Local dev
 
 ```bash
-cp .env.example .env       # edit ADMIN_EMAIL / ADMIN_PASSWORD / BRAND_*
+git clone https://github.com/ahammadshibil/reportforge
+cd reportforge
+cp .env.example .env       # set ADMIN_EMAIL + ADMIN_PASSWORD + your LLM key
 npm install
 npm run dev                # http://localhost:5000
 ```
 
-## Deploy to production
-
-### Cheapest path: Fly.io (~$0–5/month)
-
-A `Dockerfile` and `fly.toml` are committed. One-time setup:
+### Option 3 — Docker anywhere (Fly, Render, Hetzner, your own server)
 
 ```bash
-# 1. Install flyctl: https://fly.io/docs/hands-on/install-flyctl/
-fly auth login
-
-# 2. Create the app + volume + secrets
-fly apps create reportforge                              # pick your name; edit fly.toml to match
-fly volumes create reportforge_data --size 1 --region bom
-fly secrets set \
-  SESSION_SECRET=$(openssl rand -hex 32) \
-  ADMIN_EMAIL=you@example.com \
-  ADMIN_PASSWORD='change-me-to-something-strong' \
-  GEMINI_API_KEY=AIza...                                 # see "Cheap LLM" below
-fly secrets set BRAND_NAME='Your Brand' BRAND_COLOR='#0f766e'  # optional
-
-# 3. Deploy
-fly deploy
+git clone https://github.com/ahammadshibil/reportforge
+cd reportforge
+docker build -t byor .
+docker run -d --name byor -p 5000:5000 -v $(pwd)/data:/data \
+  -e SESSION_SECRET=$(openssl rand -hex 32) \
+  -e ADMIN_EMAIL=you@example.com -e ADMIN_PASSWORD=strong \
+  -e LLM_API_KEY=AIza... -e LLM_PROVIDER=gemini -e LLM_MODEL=gemini-2.0-flash \
+  byor
 ```
 
-`auto_stop_machines = "stop"` in `fly.toml` scales to zero when idle, then wakes on the first request — costs $0 most months on a personal deploy.
+---
 
-### Other one-click hosts
+## 🔌 Connectors
 
-Any platform that runs Docker + can mount a persistent volume:
+Wire your data sources once, BYOR pulls fresh on every generation.
 
-| Platform | Notes |
-|---|---|
-| **Railway** | `railway up` after the Dockerfile is in. ~$5/mo. |
-| **Render** | Web Service from Dockerfile + Disk add-on for `/data`. ~$7/mo. |
-| **DigitalOcean App Platform** | Docker source + 1GB volume. ~$5/mo. |
-| **Hetzner CX22** | €4/mo VM, run `docker compose up -d`. Most control. |
-| **Self-host on a Mac mini / Pi** | Free. Set up Cloudflare Tunnel for HTTPS. |
-
-> SQLite needs persistent disk. Fully-serverless platforms (Vercel, Cloudflare Workers) don't fit without swapping the storage layer.
-
-### Cheap LLM keys (any one is enough)
-
-BYOR uses LLMs for synthesis (text → JSON outline) and template extraction (image → JSON schema). Each can be a **different provider** — set `LLM_*` for text and `VISION_LLM_*` for vision when your text model can't see (e.g. Perplexity Sonar). Costs per generation, assuming ~10K input + 2K output tokens:
-
-| Provider · Model | $/M in | $/M out | Per-gen | Vision | Free tier |
-|---|---|---|---|---|---|
-| **Gemini 2.0 Flash** ⭐ | $0.075 | $0.30 | **~$0.001** | ✅ | 1,500 req/day |
-| Gemini 2.0 Flash-Lite | $0.04 | $0.15 | ~$0.0005 | ✅ | yes |
-| OpenAI gpt-4o-mini | $0.15 | $0.60 | ~$0.002 | ✅ | — |
-| Perplexity Sonar | $1 | $1 + $5 search | ~$0.005 | text-only | — |
-| Anthropic Claude Haiku 4.5 | $1 | $5 | ~$0.012 | ✅ | — |
-| Llama 3.3 70B (Groq) | $0.59 | $0.79 | ~$0.008 | text-only | generous |
-| DeepSeek V3 (OpenRouter) | $0.27 | $1.10 | ~$0.005 | text-only | — |
-| OpenAI gpt-4o | $2.50 | $10 | ~$0.025 | ✅ | — |
-| Claude Sonnet 4.6 | $3 | $15 | ~$0.035 | ✅ | — |
-
-**Recommended default:** `GEMINI_API_KEY` (`gemini-2.0-flash`). Free tier alone covers ~50 generations/day, no card on file. Vision works (template extraction works). At paid rates, **1000 generations/month = $1**. Get a key at [aistudio.google.com](https://aistudio.google.com).
-
-For "use any OpenAI-compatible endpoint" — set `LLM_PROVIDER=openai`, `LLM_API_KEY=<key>`, `LLM_BASE_URL=<their endpoint>`, `LLM_MODEL=<their model id>`. Examples:
-
-| Provider | `LLM_BASE_URL` | `LLM_MODEL` |
+| Connector | Auth | What it pulls |
 |---|---|---|
-| Perplexity | `https://api.perplexity.ai` | `sonar`, `sonar-pro`, `sonar-reasoning` |
-| Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
-| OpenRouter | `https://openrouter.ai/api/v1` | `deepseek/deepseek-chat`, `anthropic/claude-haiku-4-5` |
-| Together | `https://api.together.xyz/v1` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| **Stripe** | API key | MRR, customers, revenue, churn |
+| **GitHub** | PAT | Commits, PRs, releases, stars, contributors |
+| **Notion** | OAuth (official MCP) | Pages, databases |
+| **Airtable** | PAT | Bases, tables, records |
+| **Google Drive** | OAuth | Files, exported text |
+| **Obsidian** | Local REST API plugin | Notes, frontmatter, tags |
+| **URL** | None | HTML/PDF/CSV fetched + parsed |
+| **Any MCP server** | per-server | Colab, NotebookLM, Substack, Perplexity, Jupyter, your own |
 
-### Vision separation (text-only providers)
+Plus: **BYOR is itself an MCP server** — Claude Desktop / Cursor / any MCP-aware agent can drive the whole pipeline. See [`server/mcp-server/`](server/mcp-server/index.ts).
 
-If your text LLM doesn't do vision (Perplexity, Groq, most cheap options), set a **separate** `VISION_*` key for template extraction:
+---
 
-```bash
-# Text synthesis on Perplexity (cheap, search-augmented)
-LLM_PROVIDER=openai
-LLM_BASE_URL=https://api.perplexity.ai
-LLM_API_KEY=pplx-...
-LLM_MODEL=sonar
+## 🧠 Bring your own LLM key
 
-# Vision template extraction on free Gemini
-VISION_LLM_PROVIDER=gemini
-VISION_LLM_API_KEY=AIza...
-VISION_LLM_MODEL=gemini-2.0-flash
-```
+Set whichever you have. Same code path, same outputs.
 
-If `VISION_*` is unset, vision falls back to the main LLM — fine for Anthropic/OpenAI/Gemini, but template extraction will fail at request time on text-only providers.
+| Provider | Cost per generation | Vision (template extraction) | Get a key |
+|---|---|---|---|
+| **Gemini 2.0 Flash** ⭐ | ~$0.001 | ✅ | [aistudio.google.com](https://aistudio.google.com/apikey) — free tier 1500 req/day |
+| Anthropic Claude Haiku 4.5 | ~$0.012 | ✅ | [console.anthropic.com](https://console.anthropic.com) |
+| OpenAI gpt-4o-mini | ~$0.002 | ✅ | [platform.openai.com](https://platform.openai.com) |
+| Perplexity Sonar | ~$0.005 | text only | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) |
+| Groq llama-3.3-70b | ~$0.008 | text only | [console.groq.com](https://console.groq.com) — generous free tier |
+| Any OpenAI-compatible (OpenRouter, Together, local) | varies | depends | — |
 
-### Local production build
+Use a separate `VISION_LLM_*` provider when your text model can't see images (e.g. text-only models like Perplexity Sonar).
 
-```bash
-npm run build
-NODE_ENV=production node dist/index.cjs
-```
+---
 
-The SQLite database (`data.db`) and `generated/` outputs honor `DATA_DIR` (defaults to `.` in dev, `/data` in the Docker image).
+## 💰 Pricing
 
-## Whitelabel — make it yours
+**Self-host (free, forever)** — clone this repo, `npm run dev`, you're done. No feature gating. No "enterprise edition." Same code as the cloud version.
 
-All branding is env-driven, so a single deploy = a single branded tenant. No code changes required.
+**BYOR Cloud (hosted by us)** when you don't want to self-host:
 
-| Env var | Purpose |
+| | Starter | Founder ⭐ | Team | Whitelabel |
+|---|---|---|---|---|
+| **Price** | $29/mo | $79/mo | $199/mo | $499/mo + $50/seat |
+| **For** | Solo writer | Founder writing monthly updates | Small firms, multi-user | Partners reselling under their brand |
+| **Workspaces** | 1 | 3 | unlimited | unlimited |
+| **Recipes** | 8 starter | 8 starter + new monthly | + premium recipes | + custom recipes |
+| **Connectors** | All | All | All | All |
+| **LLM key** | yours | yours | yours | yours |
+| **Custom domain** | — | ✅ | ✅ | ✅ |
+| **Tenant branding** | basic | ✅ | ✅ | full whitelabel |
+| **Support** | community | email | priority | dedicated |
+
+[See full pricing →](https://byor.app/pricing) *(coming soon)*
+
+---
+
+## 🔭 What's under the hood
+
+| Layer | Stack |
 |---|---|
-| `BRAND_NAME` | App name (sidebar, page title, email subjects) |
-| `BRAND_TAGLINE` | Subtitle on login page |
-| `BRAND_COLOR` | Hex accent color — drives sidebar primary, asset chrome, email accent |
-| `BRAND_LOGO_URL` | Optional logo image (path or URL). Falls back to initials. |
-| `BRAND_LOGO_TEXT` | Initials shown when no logo image |
-| `BRAND_DOMAIN` | Domain used in email From / footers |
-| `BRAND_FOOTER` | Footer text appended to newsletters/PDFs |
-| `BRAND_SUPPORT_EMAIL` | Optional support address surfaced in UI |
-| `BRAND_THEME` | `light` / `dark` / `auto` |
+| **Engine** | Node 20 + Express 5 + TypeScript |
+| **DB** | SQLite via better-sqlite3 (single-file, zero ops). At-rest encryption for connection tokens. |
+| **LLM** | Provider-agnostic (Anthropic / OpenAI / Gemini / any OpenAI-compatible). Separate text + vision providers. |
+| **Frontend** | React 18 + Vite + Tailwind + shadcn/ui. Wouter hash routing. TanStack Query. |
+| **Generators** | pdfkit (PDF), pptxgenjs (PPTX), inline HTML (newsletter) |
+| **Scheduler** | setInterval 60s tick. Daily / weekly / monthly cadences. |
+| **Delivery** | Resend / SMTP / Obsidian-via-MCP / Substack-via-MCP / webhooks |
+| **Connectors** | Native (Stripe, GitHub, Drive, Notion, Airtable, URL) + generic MCP framework |
+| **Cleanup** | Daily TTL pass — orphan files, old versions, failed assets |
+| **Sessions** | SQLite-backed (persistent across restarts) |
+| **Security** | bcrypt-hashed admin auth, AES-256-GCM token encryption, SSRF block, login rate-limit |
 
-The brand config is exposed at `GET /api/brand` and applied at runtime — colors flow into CSS vars, logo into the sidebar, name into the title bar.
+---
 
-## Auth
+## 📡 BYOR as MCP server
 
-Single admin per deploy. Set `ADMIN_EMAIL` plus either `ADMIN_PASSWORD` (dev) or `ADMIN_PASSWORD_HASH` (bcrypt, prod). Sessions are cookie-based via `express-session` + `memorystore`.
-
-For local development you can set `AUTH_DISABLED=1` to skip the gate entirely.
-
-## BYOR as an MCP server
-
-BYOR exposes its primitives as a Model Context Protocol server, so Claude Desktop / Cursor / any MCP-aware agent can drive the whole pipeline without ever touching the UI.
+Other agents (Claude Desktop, Cursor) can drive BYOR's pipeline:
 
 ```bash
-npm run mcp                                # speaks MCP over stdio
+npm run mcp     # speaks MCP over stdio
 ```
 
 Wire to Claude Desktop (`~/.claude/claude_desktop_config.json`):
@@ -149,108 +193,85 @@ Wire to Claude Desktop (`~/.claude/claude_desktop_config.json`):
     "byor": {
       "command": "npx",
       "args": ["tsx", "/abs/path/to/reportforge/server/mcp-server/index.ts"],
-      "env": {
-        "DATA_DIR": "/abs/path/to/reportforge/prod-data",
-        "ANTHROPIC_API_KEY": "...",
-        "BRAND_NAME": "BYOR"
-      }
+      "env": { "DATA_DIR": "/abs/path/to/reportforge/data" }
     }
   }
 }
 ```
 
-Tools exposed: `byor_list_workspaces`, `byor_list_sources`, `byor_create_source`, `byor_list_templates`, `byor_list_assets`, `byor_synthesize`, `byor_fill_template`, `byor_render_template`, `byor_run_schedule`. Resources: `byor://assets/{id}`, `byor://templates/{id}`, `byor://sources/{id}`.
+Tools exposed: `byor_list_workspaces`, `byor_synthesize`, `byor_fill_template`, `byor_render_template`, `byor_run_schedule`, + more.
 
-This closes the loop in both directions: BYOR consumes any other MCP server as a source (Phase 6+), and BYOR is itself an MCP server other agents can call.
+---
 
-## Roadmap
+## 🛠️ Self-host architecture
 
-- [x] Phase 1 — Whitelabel foundation: env brand config, session auth, login gate
-- [x] Phase 2 — Connectors: Google Drive (OAuth), Notion (OAuth), Airtable (PAT), URL bookmark lists
-- [x] Phase 3 — LLM synthesis: Anthropic / OpenAI / Gemini / any OpenAI-compatible endpoint, extractive fallback
-- [x] Phase 4 — Autonomous loop: `setInterval` scheduler + email via Resend (preferred) / SMTP (nodemailer)
-- [x] Phase 5 — Direct ingestion: PDF parsing (pdf-parse), CSV row rendering, URL fetch + HTML strip
-- [x] Phase 6 — **Templates**: vision-LLM extraction (Anthropic / OpenAI / Gemini) of branded document samples → schema → fillable form → branded HTML/PDF output. Generalizes invoices, reports, newsletters, certificates, anything repetitive.
-- [ ] Future — server-side chart generation, asset versioning, multi-recipient personalization, Slack/Teams delivery
-
-## Architecture
-
-### Data model — `shared/schema.ts`
-Drizzle + better-sqlite3. Tables:
-- `workspaces` — report spaces (e.g. "Weekly digest", "Sector scans"), each with their own accent color
-- `sources` — uploaded text / linked-in connector files
-- `assets` — generated outputs (newsletter / report / deck) with file path + outline JSON
-- `schedules` — recurring jobs (cadence + recipients + template)
-
-### Backend — `server/`
-| File | What it does |
-|---|---|
-| `index.ts` | Express bootstrap, sessions, Vite middleware in dev, static serve in prod |
-| `brand.ts` | Whitelabel brand config from env |
-| `auth.ts` | Single-admin session auth (env credentials, no user table) |
-| `routes.ts` | REST API |
-| `storage.ts` | Drizzle storage with idempotent migrations |
-| `synthesizer.ts` | Async `synthesize()` — uses Claude when `ANTHROPIC_API_KEY` is set, falls back to extractive |
-| `generators.ts` | `generatePdfReport`, `generatePptxDeck`, `generateNewsletterHtml` |
-| `connectors/` | Pluggable connectors (Google Drive, Notion, Airtable, URL) — Phase 2 |
-| `seed.ts` | Seeds demo workspaces on first boot |
-
-### REST API
 ```
-GET    /api/brand                       # whitelabel config (public)
-
-GET    /api/auth/me                     # current session
-POST   /api/auth/login                  # { email, password }
-POST   /api/auth/logout
-
-GET    /api/workspaces
-POST   /api/workspaces
-PATCH  /api/workspaces/:id
-
-GET    /api/workspaces/:id/sources
-POST   /api/sources
-DELETE /api/sources/:id
-
-GET    /api/workspaces/:id/assets
-GET    /api/assets/:id
-GET    /api/assets/:id/file             # streams PDF/PPTX/HTML
-POST   /api/generate                    # body: { workspaceId, kind, title, prompt, sourceIds, tone }
-DELETE /api/assets/:id
-
-GET    /api/workspaces/:id/schedules
-POST   /api/schedules
-PATCH  /api/schedules/:id
-DELETE /api/schedules/:id
+┌─────────────────────────────────────────────────────┐
+│  Browser  →  Express (5000)  →  SQLite (data.db)    │
+│                  │                                   │
+│                  ├── /api/sources    (read)          │
+│                  ├── /api/generate   (synthesize)    │
+│                  ├── /api/schedules  (cron)          │
+│                  ├── /api/templates  (vision fill)   │
+│                  ├── /api/recipes    (install/export)│
+│                  └── /api/connections (Stripe/GH/MCP)│
+│                  │                                   │
+│  ┌───────────────┴────────────────┐                  │
+│  │  Multi-provider LLM dispatch   │                  │
+│  │  → Anthropic / OpenAI / Gemini │                  │
+│  │  → any OpenAI-compatible       │                  │
+│  └────────────────────────────────┘                  │
+└─────────────────────────────────────────────────────┘
+       ↓                ↓                ↓
+   PDF/HTML/         email          Obsidian
+   PPTX render    (Resend/SMTP)    vault writeback
+                      ↓
+                  Substack draft / webhook
 ```
 
-### Generation pipeline
-```
-sources ─▶ synthesize() ─▶ Outline {
-              title, subtitle,         (LLM via @anthropic-ai/sdk
-              executiveSummary,         when ANTHROPIC_API_KEY set,
-              sections[],               extractive otherwise)
-              metrics[], callouts[]
-           }
-              │
-   ┌──────────┼──────────┐
-   ▼          ▼          ▼
-  PDF       PPTX     HTML newsletter
-   │          │          │
-   └─── /generated/ ──────┘
-              │
-              ▼
-       asset row in SQLite
-```
+---
 
-### Frontend — `client/src/`
-- Wouter hash routing (iframe-safe)
-- TanStack Query v5 for all server state
-- shadcn/ui + Tailwind v3, dark mode via class
-- Pages: Overview, Sources, Connections, Generate, Library, Schedules, Settings, Login
-- `BrandProvider` injects brand color into CSS vars at runtime
+## 🚀 Build in public
 
-## Notes
-- SQLite via better-sqlite3 is synchronous — queries use `.get()` / `.all()` / `.run()`
-- `pptxgenjs` ESM/CJS interop: `const PptxGenJS: any = (pptxgen as any).default ?? pptxgen`
-- pdfkit page numbering uses `bufferPages: true` and `bufferedPageRange()`
-- Sessions are stored in `memorystore` — for production use, swap to a persistent store (Redis, SQLite-backed) before scaling
+BYOR is being built openly. Story posts:
+
+- [Where it started — a reporting dashboard demo](https://github.com/ahammadshibil/reportforge/blob/master/docs/launch-dev-to.md)
+- v1.0.0 release notes — [`tag/v1.0.0`](https://github.com/ahammadshibil/reportforge/releases/tag/v1.0.0)
+
+Follow:
+- 𝕏 / Twitter — *coming soon*
+- DEV.to — *coming soon*
+- Discord — *coming soon*
+
+Star the repo if BYOR helps. Stars are the leading indicator we use to decide where to push next.
+
+---
+
+## 📚 Documentation
+
+- **Quick Start** — see [Self-host in 30 seconds](#-self-host-in-30-seconds)
+- **Connector setup** — `.env.example` documents every env var
+- **Recipe authoring** — see existing recipes in [`server/recipes.ts`](server/recipes.ts); export your own via UI
+- **Architecture** — see [What's under the hood](#-whats-under-the-hood)
+- **API reference** — REST routes listed in [`server/routes.ts`](server/routes.ts)
+- **Provisioning a new tenant** — `./scripts/provision.sh <slug> "<name>" <email>`
+
+---
+
+## 🤝 Contributing
+
+PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Recipe contributions especially: build a `.byor.json` for your use case, open a PR adding it to [`server/recipes.ts`](server/recipes.ts). Every recipe is its own little vertical product.
+
+---
+
+## 🔐 Security
+
+Found a security issue? Please disclose responsibly — see [SECURITY.md](SECURITY.md).
+
+---
+
+## 📄 License
+
+[MIT](LICENSE) — use it, fork it, sell it, host it. No enterprise gotchas, no SSO held hostage.

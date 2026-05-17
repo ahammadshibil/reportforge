@@ -20,6 +20,8 @@ import Templates from "@/pages/Templates";
 import TemplateBuild from "@/pages/TemplateBuild";
 import Recipes from "@/pages/Recipes";
 import Login from "@/pages/Login";
+import Landing from "@/pages/Landing";
+import Pricing from "@/pages/Pricing";
 import NotFound from "@/pages/not-found";
 
 function AppRouter() {
@@ -40,6 +42,20 @@ function AppRouter() {
   );
 }
 
+// Routes the unauthenticated visitor can hit. /pricing and / (landing)
+// are public marketing pages — they don't need auth. Everything else
+// falls through to <Login /> when auth is configured.
+function PublicRouter() {
+  return (
+    <Switch>
+      <Route path="/pricing" component={Pricing} />
+      <Route path="/login" component={Login} />
+      <Route path="/" component={Landing} />
+      <Route component={Landing} />
+    </Switch>
+  );
+}
+
 function AuthGate() {
   const { user, configured, isLoading } = useAuth();
   if (isLoading) {
@@ -51,7 +67,7 @@ function AuthGate() {
   }
   // If auth isn't configured at all, behave like dev mode and skip the gate.
   if (!user && configured) {
-    return <Login />;
+    return <PublicRouter />;
   }
   return (
     <WorkspaceProvider>

@@ -621,6 +621,24 @@ export async function registerRoutes(
   });
 
   // ----- Recipes (pre-baked workflows) -----
+  // PUBLIC version — same payload, no auth. Used by the landing page
+  // so the marketing surface always reflects the live catalog (avoids
+  // hardcoded recipe lists drifting from server/recipes.ts).
+  app.get("/api/recipes/public", async (_req, res) => {
+    const { RECIPES } = await import("./recipes");
+    res.json(
+      RECIPES.map((r) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        category: r.category,
+        bestFor: r.bestFor ?? null,
+        cadenceLabel: r.cadenceLabel ?? null,
+        connectorsRecommended: r.connectorsRecommended ?? [],
+      }))
+    );
+  });
+
   app.get("/api/recipes", guard, async (_req, res) => {
     const { RECIPES } = await import("./recipes");
     res.json(

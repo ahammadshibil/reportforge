@@ -1,6 +1,7 @@
 // Public landing page — shown to unauthenticated visitors when auth is
 // configured. Marketing-shaped, not app-shaped.
 
+import { useQuery } from "@tanstack/react-query";
 import { useBrand } from "@/lib/brandContext";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -17,18 +18,30 @@ import {
   Briefcase,
   Code,
   Heart,
+  Package,
 } from "lucide-react";
 
-const RECIPES = [
-  { id: "founder-monthly-update", name: "Founder Monthly Update", icon: TrendingUp, who: "Founders writing investor updates", cadence: "Every month", connectors: ["Stripe", "GitHub"] },
-  { id: "vc-lp-digest", name: "VC Weekly LP Digest", icon: Briefcase, who: "Solo GPs and small VC firms", cadence: "Every Friday", connectors: ["Airtable", "Notion"] },
-  { id: "engineering-weekly", name: "Engineering Weekly", icon: Code, who: "CTOs explaining work to leadership", cadence: "Every Friday", connectors: ["GitHub"] },
-  { id: "marketing-monthly", name: "Marketing Performance Monthly", icon: TrendingUp, who: "Solo marketers + small teams", cadence: "Every month", connectors: ["URL", "Notion"] },
-  { id: "oss-maintainer-update", name: "OSS Maintainer Update", icon: Heart, who: "OSS maintainers w/ Sponsors", cadence: "Every month", connectors: ["GitHub"] },
-  { id: "atoms-and-cells", name: "Atoms & Cells Weekly", icon: Newspaper, who: "Bio newsletter writers", cadence: "Every Monday", connectors: ["Obsidian"] },
-  { id: "ic-memo", name: "IC Memo Template", icon: FileText, who: "VC investment committees", cadence: "Per deal", connectors: ["Any"] },
-  { id: "quarterly-portfolio", name: "Quarterly Portfolio Update", icon: Briefcase, who: "VC firms writing LP quarterlies", cadence: "Quarterly", connectors: ["Airtable"] },
-];
+// Icon map — recipes from the API don't ship an icon, we pick one per category
+// so the visuals stay rich without hardcoding the recipe list.
+const CATEGORY_ICONS: Record<string, any> = {
+  founder: TrendingUp,
+  vc: Briefcase,
+  engineering: Code,
+  marketing: TrendingUp,
+  oss: Heart,
+  biotech: Newspaper,
+  general: FileText,
+};
+
+type PublicRecipe = {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  bestFor: string | null;
+  cadenceLabel: string | null;
+  connectorsRecommended: Array<{ type: string; label: string; required?: boolean }>;
+};
 
 const COMPARISON = [
   ["Open source", true, false, false, false, false],
@@ -51,6 +64,9 @@ function Cell({ v }: { v: any }) {
 
 export default function Landing() {
   const brand = useBrand();
+  const { data: recipes = [] } = useQuery<PublicRecipe[]>({
+    queryKey: ["/api/recipes/public"],
+  });
   return (
     <div className="min-h-dvh bg-background">
       {/* Top nav */}
@@ -155,28 +171,48 @@ export default function Landing() {
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          {RECIPES.map((r) => {
-            const Icon = r.icon;
-            return (
-              <div key={r.id} className="rounded-lg border border-border p-4 hover-elevate">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="h-7 w-7 rounded-md bg-muted grid place-items-center shrink-0">
-                    <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                  </div>
-                  <div className="text-sm font-semibold tracking-tight">{r.name}</div>
-                </div>
-                <div className="text-xs text-muted-foreground mb-3">{r.who}</div>
-                <div className="text-[11px] text-muted-foreground flex flex-wrap gap-1">
-                  <span className="px-1.5 py-0.5 rounded bg-muted">{r.cadence}</span>
-                  {r.connectors.map((c) => (
-                    <span key={c} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary">
-                      {c}
-                    </span>
-                  ))}
-                </div>
+          {recipes.length === 0 ? (
+            // Skeleton while the public catalog loads — avoids empty-state flash
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-lg border border-border p-4 animate-pulse">
+                <div className="h-4 w-32 bg-muted rounded mb-3" />
+                <div className="h-3 w-full bg-muted rounded mb-2" />
+                <div className="h-3 w-20 bg-muted rounded" />
               </div>
-            );
-          })}
+            ))
+          ) : (
+            recipes.map((r) => {
+              const Icon = CATEGORY_ICONS[r.category] ?? Package;
+              const reqConnectors = r.connectorsRecommended
+                .filter((c) => c.required)
+                .map((c) => c.type);
+              return (
+                <div key={r.id} className="rounded-lg border border-border p-4 hover-elevate">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="h-7 w-7 rounded-md bg-muted grid place-items-center shrink-0">
+                      <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                    </div>
+                    <div className="text-sm font-semibold tracking-tight">{r.name}</div>
+                  </div>
+                  {r.bestFor && (
+                    <div className="text-xs text-muted-foreground mb-3 line-clamp-2">
+                      {r.bestFor}
+                    </div>
+                  )}
+                  <div className="text-[11px] text-muted-foreground flex flex-wrap gap-1">
+                    {r.cadenceLabel && (
+                      <span className="px-1.5 py-0.5 rounded bg-muted">{r.cadenceLabel}</span>
+                    )}
+                    {reqConnectors.map((c) => (
+                      <span key={c} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </section>
 
